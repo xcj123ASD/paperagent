@@ -4,9 +4,11 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"os"
 
 	"paperagent/internal/config"
 	"paperagent/internal/frame"
+	"paperagent/internal/llm"
 	"paperagent/internal/model"
 	"paperagent/internal/pipeline"
 	"paperagent/internal/retriever"
@@ -22,7 +24,19 @@ type Orchestrator struct {
 func New(cfg config.Config, catalog []model.Journal) *Orchestrator {
 	pipeline.Register(pipeline.Stub{Name_: "step3_litreview"})
 	pipeline.Register(pipeline.Stub{Name_: "step4_design"})
-	pipeline.Register(frame.Stage{B: &frame.Builder{Rules: frame.DefaultRules()}})
+
+	var llmClient llm.Client
+	if os.Getenv("LLM_PROVIDER") != "" {
+		llmClient = llm.NewFromEnv()
+	}
+	if llmClient == nil {
+		llmClient = llm.MockClient{}
+	}
+
+	pipeline.Register(frame.Stage{B: &frame.Builder{
+		Rules: frame.DefaultRules(),
+		LLM:   llmClient,
+	}})
 	return &Orchestrator{Cfg: cfg, Catalog: catalog}
 }
 
@@ -52,7 +66,12 @@ func (o *Orchestrator) Run(inputJSON []byte) ([]byte, error) {
 		cat = retriever.MockCatalog
 	}
 	journals := retriever.MatchJournals(topic, disc, sub, kw, cat,
-		retriever.DisciplineWeights{o.Cfg.Weights.Discipline, o.Cfg.Weights.Column, o.Cfg.Weights.Quality, o.Cfg.Weights.Hotness})
+		retriever.DisciplineWeights{
+			Discipline: o.Cfg.Weights.Discipline,
+			Column:     o.Cfg.Weights.Column,
+			Quality:    o.Cfg.Weights.Quality,
+			Hotness:    o.Cfg.Weights.Hotness,
+		})
 	for _, c := range new(rule.Engine).ValidateJournals(journals, artType) {
 		checks = append(checks, c)
 	}

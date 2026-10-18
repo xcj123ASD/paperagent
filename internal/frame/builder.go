@@ -1,26 +1,43 @@
 package frame
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
+	"paperagent/internal/llm"
 	"paperagent/internal/model"
 	"paperagent/internal/pipeline"
 )
 
 var ErrNotImplemented = errors.New("LLM 路径尚未接入")
 
-type Builder struct{ Rules CatalogRules }
+type Builder struct {
+	Rules CatalogRules
+	LLM   llm.Client
+}
 
 type CatalogRules map[string]struct {
 	Columns map[string]ColumnRule
 }
 
 type ColumnRule struct {
-	MinWords, MaxWords    int
-	EmpiricalRequired     bool
-	DefaultStructure      []string
+	MinWords, MaxWords int
+	EmpiricalRequired  bool
+	DefaultStructure   []string
+}
+
+var roleMap = map[string]string{
+	"引言":        "提出问题与研究意义",
+	"文献综述":      "梳理既有研究并找缺口",
+	"文献综述与研究假设": "提出研究假设",
+	"研究设计":      "数据来源、变量与模型",
+	"实证结果":      "主回归与稳健性检验",
+	"分析与讨论":     "机制分析与讨论",
+	"结论":        "总结与政策启示",
+	"结论与政策启示":   "总结与建议",
 }
 
 func DefaultRules() CatalogRules {
@@ -31,32 +48,61 @@ func DefaultRules() CatalogRules {
 	}
 }
 
+func fallbackColumnRule(totalWords int) ColumnRule {
+	return ColumnRule{
+		MinWords:         totalWords - 1000,
+		MaxWords:         totalWords + 1000,
+		DefaultStructure: []string{"引言", "文献综述", "研究设计", "分析与讨论", "结论"},
+	}
+}
+
 func (b *Builder) Build(topic, targetJournal, column string, totalWords int) (model.Frame, error) {
 	f := model.Frame{
 		Title: topic, TargetJournal: targetJournal, Column: column, WordCount: totalWords,
 		TitleAlt: []string{}, Keywords: []string{}, RiskHints: []string{}, FigureTablePlan: []model.FigTable{},
 	}
-	
+
+	if totalWords <= 0 {
+		return f, fmt.Errorf("totalWords 必须为正数，当前为 %d", totalWords)
+	}
+
 	rules, ok := b.Rules[targetJournal]
 	if !ok {
 		f.RiskHints = append(f.RiskHints, fmt.Sprintf("期刊 %s 无栏目规则，已使用通用模板", targetJournal))
 		fallback := CatalogRules{
 			"_": {Columns: map[string]ColumnRule{
-				"_": {totalWords - 1000, totalWords + 1000, false, []string{"引言", "文献综述", "研究设计", "分析与讨论", "结论"}},
+				"_": fallbackColumnRule(totalWords),
 			}},
 		}
 		rules = fallback["_"]
 		column = "_"
+	} else if column == "" {
+		f.RiskHints = append(f.RiskHints, "未指定栏目，已使用通用模板")
 	}
 
 	cr, ok := rules.Columns[column]
 	if !ok {
-		cr = ColumnRule{totalWords - 1000, totalWords + 1000, false, []string{"引言", "文献综述", "研究设计", "结论"}}
+		f.RiskHints = append(f.RiskHints, fmt.Sprintf("栏目 %q 无专属规则，已使用通用模板", column))
+		cr = fallbackColumnRule(totalWords)
 	}
 
-	n := len(cr.DefaultStructure)
+	if cr.MinWords > 0 && totalWords < cr.MinWords {
+		f.RiskHints = append(f.RiskHints, fmt.Sprintf("总字数 %d 低于栏目下限 %d", totalWords, cr.MinWords))
+	}
+	if cr.MaxWords > 0 && totalWords > cr.MaxWords {
+		f.RiskHints = append(f.RiskHints, fmt.Sprintf("总字数 %d 高于栏目上限 %d", totalWords, cr.MaxWords))
+	}
+
+	structure := cr.DefaultStructure
+	if len(structure) == 0 {
+		structure = fallbackColumnRule(totalWords).DefaultStructure
+	}
+	n := len(structure)
+	if totalWords < n {
+		return f, fmt.Errorf("总字数 %d 小于章节数 %d，无法分配", totalWords, n)
+	}
 	base := totalWords / n
-	for i, name := range cr.DefaultStructure {
+	for i, name := range structure {
 		w := base
 		if i == n-1 {
 			w = totalWords - base*(n-1)
@@ -66,7 +112,29 @@ func (b *Builder) Build(topic, targetJournal, column string, totalWords int) (mo
 			RequiredEvidence: evidenceOf(name), WordBudget: w, MustCite: []string{}, Forbidden: forbiddenOf(name),
 		})
 	}
-	
+
+	// LLM 填充 KeyPoints（结构不变，仅补内容；LLM 为 nil 时跳过）
+	if b.LLM != nil {
+		for i := range f.Sections {
+			s := &f.Sections[i]
+			if len(s.KeyPoints) > 0 {
+				continue
+			}
+			points, err := b.LLM.KeyPoints(context.Background(), llm.KeyPointRequest{
+				Topic:       topic,
+				Section:     s.Name,
+				Role:        s.Role,
+				ArticleType: "实证型", // TODO: 后续从 Stage.Run 透传 ArticleType
+				MaxPoints:   4,
+			})
+			if err != nil {
+				f.RiskHints = append(f.RiskHints, fmt.Sprintf("章节 %q LLM 生成要点失败：%v", s.Name, err))
+				continue
+			}
+			s.KeyPoints = points
+		}
+	}
+
 	if err := ValidateL1(f, totalWords); err != nil {
 		return f, err
 	}
@@ -74,7 +142,7 @@ func (b *Builder) Build(topic, targetJournal, column string, totalWords int) (mo
 }
 
 func ValidateL1(f model.Frame, total int) error {
-	if f.Title == "" {
+	if strings.TrimSpace(f.Title) == "" {
 		return errors.New("title 为空")
 	}
 	if len(f.Sections) == 0 {
@@ -83,14 +151,17 @@ func ValidateL1(f model.Frame, total int) error {
 	sum := 0
 	hasLit, hasConcl := false, false
 	for i, s := range f.Sections {
-		if s.Name == "" {
+		if strings.TrimSpace(s.Name) == "" {
 			return fmt.Errorf("section[%d] name 为空", i)
 		}
+		if s.WordBudget <= 0 {
+			return fmt.Errorf("section[%d] %q 字数预算非正：%d", i, s.Name, s.WordBudget)
+		}
 		sum += s.WordBudget
-		if s.Name == "文献综述" || s.Name == "文献综述与研究假设" {
+		if isLiteratureSection(s.Name) {
 			hasLit = true
 		}
-		if s.Name == "结论" || s.Name == "结论与政策启示" {
+		if isConclusionSection(s.Name) {
 			hasConcl = true
 		}
 	}
@@ -106,38 +177,36 @@ func ValidateL1(f model.Frame, total int) error {
 	return nil
 }
 
+func isLiteratureSection(name string) bool {
+	return strings.Contains(name, "文献综述") || strings.Contains(name, "文献回顾")
+}
+
+func isConclusionSection(name string) bool {
+	return strings.Contains(name, "结论") || strings.Contains(name, "结语")
+}
+
 func roleOf(name string) string {
-	m := map[string]string{
-		"引言": "提出问题与研究意义", 
-		"文献综述": "梳理既有研究并找缺口",
-		"研究设计": "数据来源、变量与模型", 
-		"实证结果": "主回归与稳健性检验",
-		"结论": "总结与政策启示", 
-		"文献综述与研究假设": "提出研究假设",
-		"分析与讨论": "机制分析与讨论", 
-		"结论与政策启示": "总结与建议",
-	}
-	if v, ok := m[name]; ok {
+	if v, ok := roleMap[name]; ok {
 		return v
 	}
 	return "待补充"
 }
 
 func evidenceOf(name string) []string {
-	if name == "研究设计" {
+	if strings.Contains(name, "研究设计") {
 		return []string{"数据来源说明", "变量定义表"}
 	}
-	if name == "实证结果" {
+	if strings.Contains(name, "实证结果") {
 		return []string{"回归结果表", "稳健性检验表"}
 	}
 	return []string{}
 }
 
 func forbiddenOf(name string) []string {
-	if name == "引言" {
+	if strings.Contains(name, "引言") {
 		return []string{"回归结果", "公式推导"}
 	}
-	if name == "结论" {
+	if strings.Contains(name, "结论") || strings.Contains(name, "结语") {
 		return []string{"新的变量定义", "新的文献引用"}
 	}
 	return []string{}
@@ -147,12 +216,13 @@ func forbiddenOf(name string) []string {
 type Stage struct{ B *Builder }
 
 func (Stage) Name() string { return "step2_frame" }
+
 func (s Stage) Run(ctx *pipeline.Context, input []byte) ([]byte, error) {
 	ctx.Logf("step2_frame", fmt.Sprintf("收到输入 %d 字节", len(input)))
 
 	var s1 model.Step1Output
 	if err := json.Unmarshal(input, &s1); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("step2_frame: 解析 step1 输入失败: %w", err)
 	}
 	if len(s1.Journals) == 0 {
 		return nil, fmt.Errorf("step2_frame: step1 未返回任何期刊")
@@ -163,12 +233,17 @@ func (s Stage) Run(ctx *pipeline.Context, input []byte) ([]byte, error) {
 	if len(j.Columns) > 0 {
 		column = j.Columns[0]
 	}
-	totalWords := (j.WordMin + j.WordMax) / 2
+	totalWords := resolveTotalWords(j.WordMin, j.WordMax)
 	if totalWords <= 0 {
 		totalWords = 10000
 	}
 
-	f, err := s.B.Build(s1.Topic, j.Name, column, totalWords)
+	b := s.B
+	if b == nil {
+		b = &Builder{Rules: DefaultRules()}
+	}
+
+	f, err := b.Build(s1.Topic, j.Name, column, totalWords)
 	if err != nil {
 		return nil, err
 	}
@@ -182,4 +257,17 @@ func (s Stage) Run(ctx *pipeline.Context, input []byte) ([]byte, error) {
 		return nil, err
 	}
 	return out, nil
+}
+
+func resolveTotalWords(min, max int) int {
+	if min > 0 && max > 0 {
+		return (min + max) / 2
+	}
+	if max > 0 {
+		return max
+	}
+	if min > 0 {
+		return min
+	}
+	return 0
 }
