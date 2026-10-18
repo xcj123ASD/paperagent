@@ -1,6 +1,7 @@
 package frame
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -146,9 +147,39 @@ func forbiddenOf(name string) []string {
 type Stage struct{ B *Builder }
 
 func (Stage) Name() string { return "step2_frame" }
-
 func (s Stage) Run(ctx *pipeline.Context, input []byte) ([]byte, error) {
 	ctx.Logf("step2_frame", fmt.Sprintf("收到输入 %d 字节", len(input)))
-	return nil, pipeline.ErrNotImplemented // 注意：返回 pipeline 的错误，供 orchestrator 统一判断
+
+	var s1 model.Step1Output
+	if err := json.Unmarshal(input, &s1); err != nil {
+		return nil, err
+	}
+	if len(s1.Journals) == 0 {
+		return nil, fmt.Errorf("step2_frame: step1 未返回任何期刊")
+	}
+
+	j := s1.Journals[0]
+	column := ""
+	if len(j.Columns) > 0 {
+		column = j.Columns[0]
+	}
+	totalWords := (j.WordMin + j.WordMax) / 2
+	if totalWords <= 0 {
+		totalWords = 10000
+	}
+
+	f, err := s.B.Build(s1.Topic, j.Name, column, totalWords)
+	if err != nil {
+		return nil, err
+	}
+
+	if j.EmpiricalOnly && s1.ArticleType != "实证型" {
+		f.RiskHints = append(f.RiskHints, fmt.Sprintf("期刊《%s》仅收实证型，当前文章类型为 %s", j.Name, s1.ArticleType))
+	}
+
+	out, err := json.MarshalIndent(f, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
-// Build 根据期刊与栏目规则生成框架
