@@ -1,0 +1,8 @@
+journal,abbr,discipline,sub,level,columns,empirical_only,word_min,word_max,title_style,cycle,notes
+中国行政管理,ZGXZGL,公共管理,数字治理,CSSCI,公共管理前沿|数字治理,false,8000,12000,no_subtitle,月刊,需政策建议小节
+社会学研究,SHXBYJ,社会学,社会分层,CSSCI,论文|专题研讨,false,10000,15000,allow_subtitle,双月刊,摘要须含研究方法
+管理世界,GLSJ,管理学,组织与战略,CSSCI,实证研究|综述,true,12000,18000,require_method,月刊,只收实证
+情报学报,QBXB,图书情报,信息行为,CSSCI,理论探索|技术应用,false,6000,10000,allow_subtitle,月刊,
+现代情报,XDQB,图书情报,知识服务,北大核心,数字图书馆|情报分析,false,5000,9000,allow_subtitle,月刊,
+电子政务,DZZW,公共管理,电子政务,CSSCI,理论研究|实践探索,false,7000,11000,no_subtitle,月刊,
+公共管理学报,GLGLXB,公共管理,公共政策,CSSCI,论文,true,9000,14000,allow_subtitle,季刊,审稿周期长
