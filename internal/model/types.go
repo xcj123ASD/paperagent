@@ -1,5 +1,12 @@
 package model
 
+type Mode string
+
+const (
+	ModeThesis  Mode = "thesis"
+	ModeJournal Mode = "journal"
+)
+
 type Journal struct {
 	Name          string   `json:"name"`
 	Abbr          string   `json:"abbr"`
@@ -66,6 +73,7 @@ type Frame struct {
 	AbstractCN      string     `json:"abstract_cn"`
 	AbstractEN      string     `json:"abstract_en"`
 	Keywords        []string   `json:"keywords"`
+	Mode            Mode       `json:"mode"`
 	Sections        []Section  `json:"sections"`
 	WordCount       int        `json:"word_count"`
 	TargetJournal   string     `json:"target_journal"`

@@ -14,6 +14,7 @@ import (
 
 type Builder struct {
 	Rules CatalogRules
+	Mode  model.Mode
 	LLM   llm.Client
 }
 
@@ -38,12 +39,23 @@ var roleMap = map[string]string{
 	"结论与政策启示":   "总结与建议",
 }
 
+// DefaultRules 兼容旧调用方，默认按 thesis 模式返回
 func DefaultRules() CatalogRules {
-	return CatalogRules{
+	return DefaultRulesWithMode(model.ModeThesis)
+}
+
+// DefaultRulesWithMode 按论文模式返回栏目规则
+func DefaultRulesWithMode(mode model.Mode) CatalogRules {
+	base := CatalogRules{
 		"中国行政管理": {Columns: map[string]ColumnRule{
 			"公共管理前沿": {8000, 12000, false, []string{"引言", "文献综述与研究假设", "研究设计", "实证结果", "结论与政策启示"}},
 		}},
 	}
+	if mode == model.ModeJournal {
+		// TODO(M3): 期刊模式专属结构，需体现理论贡献、研究缺口、假设推导
+		return base
+	}
+	return base
 }
 
 func fallbackColumnRule(totalWords int) ColumnRule {
@@ -52,6 +64,14 @@ func fallbackColumnRule(totalWords int) ColumnRule {
 		MaxWords:         totalWords + 1000,
 		DefaultStructure: []string{"引言", "文献综述", "研究设计", "分析与讨论", "结论"},
 	}
+}
+
+// mode 零值统一当 thesis
+func (b *Builder) mode() model.Mode {
+	if b.Mode == "" {
+		return model.ModeThesis
+	}
+	return b.Mode
 }
 
 // Build 兼容旧调用方，默认按"实证型"处理
@@ -63,6 +83,7 @@ func (b *Builder) Build(topic, targetJournal, column string, totalWords int) (mo
 func (b *Builder) BuildWithType(topic, targetJournal, column string, totalWords int, articleType string) (model.Frame, error) {
 	f := model.Frame{
 		Title: topic, TargetJournal: targetJournal, Column: column, WordCount: totalWords,
+		Mode:     b.mode(),
 		TitleAlt: []string{}, Keywords: []string{}, RiskHints: []string{}, FigureTablePlan: []model.FigTable{},
 	}
 
@@ -132,6 +153,7 @@ func (b *Builder) BuildWithType(topic, targetJournal, column string, totalWords 
 				Role:        s.Role,
 				ArticleType: articleType,
 				MaxPoints:   4,
+				Mode:        b.mode(),
 			})
 			if err != nil {
 				f.RiskHints = append(f.RiskHints, fmt.Sprintf("章节 %q LLM 生成要点失败：%v", s.Name, err))

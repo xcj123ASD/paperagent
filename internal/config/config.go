@@ -1,5 +1,7 @@
 package config
 
+import "paperagent/internal/model"
+
 type Weights struct {
 	Discipline float64 `json:"discipline"`
 	Column     float64 `json:"column"`
@@ -26,4 +28,5 @@ type Config struct {
 	Key        string
 	ModelScore string
 	ModelWrite string
+	Mode       model.Mode
 }

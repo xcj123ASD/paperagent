@@ -10,6 +10,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"paperagent/internal/model"
 )
 
 type KeyPointRequest struct {
@@ -18,6 +20,7 @@ type KeyPointRequest struct {
 	Role        string
 	ArticleType string
 	MaxPoints   int
+	Mode        model.Mode
 }
 
 type ExpandSectionRequest struct {
