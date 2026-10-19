@@ -70,6 +70,7 @@ type Frame struct {
 	WordCount       int        `json:"word_count"`
 	TargetJournal   string     `json:"target_journal"`
 	Column          string     `json:"column"`
+	ArticleType     string     `json:"article_type"`
 	FigureTablePlan []FigTable `json:"figure_table_plan"`
 	RiskHints       []string   `json:"risk_hints"`
 }
@@ -82,6 +83,7 @@ type Section struct {
 	WordBudget       int      `json:"word_budget"`
 	MustCite         []string `json:"must_cite"`
 	Forbidden        []string `json:"forbidden"`
+	Content          string   `json:"content"` // M1: 正文，由 step3 填充
 }
 
 type FigTable struct {

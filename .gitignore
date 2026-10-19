@@ -1,0 +1,9 @@
+﻿key.txt
+env.ps1
+draft.json
+step*.json
+frame.json
+test_result.txt
+*.exe
+*.test
+*.out

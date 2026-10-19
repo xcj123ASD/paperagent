@@ -20,11 +20,23 @@ type KeyPointRequest struct {
 	MaxPoints   int
 }
 
-type Client interface {
-	KeyPoints(ctx context.Context, req KeyPointRequest) ([]string, error)
+type ExpandSectionRequest struct {
+	Topic            string
+	Section          string
+	Role             string
+	KeyPoints        []string
+	WordBudget       int
+	ArticleType      string
+	PreviousSummary  string
+	RequiredEvidence []string
+	Forbidden        []string
 }
 
-// MockClient 离线用，不依赖网络
+type Client interface {
+	KeyPoints(ctx context.Context, req KeyPointRequest) ([]string, error)
+	ExpandSection(ctx context.Context, req ExpandSectionRequest) (string, error)
+}
+
 type MockClient struct{}
 
 func (MockClient) KeyPoints(ctx context.Context, req KeyPointRequest) ([]string, error) {
@@ -34,8 +46,21 @@ func (MockClient) KeyPoints(ctx context.Context, req KeyPointRequest) ([]string,
 	}, nil
 }
 
-// FallbackClient 主备降级：Primary 失败自动切 Backup。
-// 任何错误都触发降级（包括 401），因为另一个 provider 的 Key 可能是对的。
+func (MockClient) ExpandSection(ctx context.Context, req ExpandSectionRequest) (string, error) {
+	para := fmt.Sprintf("【%s】这是 Mock 生成的正文段落，覆盖要点：%s。",
+		req.Section, strings.Join(req.KeyPoints, "、"))
+	paraRunes := len([]rune(para))
+	repeat := req.WordBudget / (paraRunes + 1)
+	if repeat < 1 {
+		repeat = 1
+	}
+	parts := make([]string, 0, repeat)
+	for i := 0; i < repeat; i++ {
+		parts = append(parts, para)
+	}
+	return strings.Join(parts, "\n\n"), nil
+}
+
 type FallbackClient struct {
 	Primary Client
 	Backup  Client
@@ -52,6 +77,17 @@ func (f FallbackClient) KeyPoints(ctx context.Context, req KeyPointRequest) ([]s
 	return f.Backup.KeyPoints(ctx, req)
 }
 
+func (f FallbackClient) ExpandSection(ctx context.Context, req ExpandSectionRequest) (string, error) {
+	content, err := f.Primary.ExpandSection(ctx, req)
+	if err == nil {
+		return content, nil
+	}
+	if f.Backup == nil {
+		return "", err
+	}
+	return f.Backup.ExpandSection(ctx, req)
+}
+
 type OpenAICompatClient struct {
 	BaseURL    string
 	APIKey     string
@@ -65,15 +101,11 @@ func NewOpenAICompat(baseURL, apiKey, model string) *OpenAICompatClient {
 		APIKey:  apiKey,
 		Model:   model,
 		HTTPClient: &http.Client{
-			Timeout: 60 * time.Second,
+			Timeout: 90 * time.Second,
 		},
 	}
 }
 
-// NewFromEnv 同时构建通义千问和 DeepSeek：
-//   - 两个 Key 都设：返回 FallbackClient，主用 LLM_PROVIDER 指定的，挂了自动切另一个
-//   - 只设一个 Key：返回那一个客户端，行为跟单 provider 一样
-//   - 都没设：返回 nil，orchestrator 会 fallback 到 Mock
 func NewFromEnv() Client {
 	qwenKey := os.Getenv("DASHSCOPE_API_KEY")
 	dsKey := os.Getenv("DEEPSEEK_API_KEY")
@@ -90,7 +122,7 @@ func NewFromEnv() Client {
 		deepseek = NewOpenAICompat(
 			"https://api.deepseek.com",
 			dsKey,
-			"deepseek-flash", // 官方推荐名，指向 V4.1-Flash-1017
+			"deepseek-chat",
 		)
 	}
 
@@ -109,7 +141,6 @@ func NewFromEnv() Client {
 	}
 }
 
-// HTTPError 带状态码，供重试逻辑区分可重试/不可重试
 type HTTPError struct {
 	StatusCode int
 	Body       string
@@ -119,8 +150,18 @@ func (e *HTTPError) Error() string {
 	return fmt.Sprintf("LLM 返回 %d: %s", e.StatusCode, e.Body)
 }
 
-// buildKeyPointPrompt 是 Skill 接入的锚点。
-// M1 之后迁移到 SKILL.md 时，只改这一个函数。
+func isRetryable(err error) bool {
+	if err == nil {
+		return false
+	}
+	if he, ok := err.(*HTTPError); ok {
+		if he.StatusCode >= 400 && he.StatusCode < 500 && he.StatusCode != 429 {
+			return false
+		}
+	}
+	return true
+}
+
 func buildKeyPointPrompt(req KeyPointRequest) string {
 	return fmt.Sprintf(
 		"你是一位学术论文写作助手。请为以下章节生成不超过 %d 个核心要点，每个要点一行，不要编号，不要解释。\n"+
@@ -129,7 +170,32 @@ func buildKeyPointPrompt(req KeyPointRequest) string {
 	)
 }
 
-// KeyPoints 带重试：网络/5xx/429 重试 3 次；4xx（除 429）直接失败
+func buildExpandSectionPrompt(req ExpandSectionRequest) string {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("你是一位学术论文写作助手。请为以下章节撰写正文，约 %d 字。\n", req.WordBudget))
+	sb.WriteString(fmt.Sprintf("论文主题：%s\n", req.Topic))
+	sb.WriteString(fmt.Sprintf("章节：%s\n", req.Section))
+	sb.WriteString(fmt.Sprintf("章节作用：%s\n", req.Role))
+	sb.WriteString(fmt.Sprintf("文章类型：%s\n", req.ArticleType))
+	if len(req.KeyPoints) > 0 {
+		sb.WriteString("本章节需要覆盖的要点：\n")
+		for _, p := range req.KeyPoints {
+			sb.WriteString("- " + p + "\n")
+		}
+	}
+	if req.PreviousSummary != "" {
+		sb.WriteString(fmt.Sprintf("前文摘要（避免重复，保持衔接）：%s\n", req.PreviousSummary))
+	}
+	if len(req.RequiredEvidence) > 0 {
+		sb.WriteString(fmt.Sprintf("必须包含的证据/表格：%s\n", strings.Join(req.RequiredEvidence, "、")))
+	}
+	if len(req.Forbidden) > 0 {
+		sb.WriteString(fmt.Sprintf("禁止出现的内容：%s\n", strings.Join(req.Forbidden, "、")))
+	}
+	sb.WriteString("要求：学术书面语，段落分明，不要出现小标题，不要编造具体数据（如回归系数、统计数字）。")
+	return sb.String()
+}
+
 func (c *OpenAICompatClient) KeyPoints(ctx context.Context, req KeyPointRequest) ([]string, error) {
 	const maxAttempts = 3
 	var lastErr error
@@ -139,12 +205,7 @@ func (c *OpenAICompatClient) KeyPoints(ctx context.Context, req KeyPointRequest)
 			return points, nil
 		}
 		lastErr = err
-		if he, ok := err.(*HTTPError); ok {
-			if he.StatusCode >= 400 && he.StatusCode < 500 && he.StatusCode != 429 {
-				return nil, err
-			}
-		}
-		if attempt == maxAttempts-1 {
+		if !isRetryable(err) || attempt == maxAttempts-1 {
 			break
 		}
 		select {
@@ -157,49 +218,10 @@ func (c *OpenAICompatClient) KeyPoints(ctx context.Context, req KeyPointRequest)
 }
 
 func (c *OpenAICompatClient) doKeyPoints(ctx context.Context, req KeyPointRequest) ([]string, error) {
-	body := map[string]interface{}{
-		"model": c.Model,
-		"messages": []map[string]string{
-			{"role": "user", "content": buildKeyPointPrompt(req)},
-		},
-		"temperature": 0.7,
-		"max_tokens":  512,
-	}
-	raw, _ := json.Marshal(body)
-
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", c.BaseURL+"/chat/completions", bytes.NewReader(raw))
+	content, err := c.chat(ctx, buildKeyPointPrompt(req), 512)
 	if err != nil {
-		return nil, fmt.Errorf("构造请求失败: %w", err)
+		return nil, err
 	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+c.APIKey)
-
-	resp, err := c.HTTPClient.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("请求 LLM 失败: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBody, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != http.StatusOK {
-		return nil, &HTTPError{StatusCode: resp.StatusCode, Body: string(respBody)}
-	}
-
-	var result struct {
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
-	}
-	if err := json.Unmarshal(respBody, &result); err != nil {
-		return nil, fmt.Errorf("解析 LLM 响应失败: %w", err)
-	}
-	if len(result.Choices) == 0 {
-		return nil, fmt.Errorf("LLM 返回空 choices")
-	}
-
-	content := strings.TrimSpace(result.Choices[0].Message.Content)
 	var points []string
 	for _, line := range strings.Split(content, "\n") {
 		line = strings.TrimSpace(line)
@@ -213,4 +235,81 @@ func (c *OpenAICompatClient) doKeyPoints(ctx context.Context, req KeyPointReques
 		points = points[:req.MaxPoints]
 	}
 	return points, nil
+}
+
+func (c *OpenAICompatClient) ExpandSection(ctx context.Context, req ExpandSectionRequest) (string, error) {
+	const maxAttempts = 2
+	var lastErr error
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		content, err := c.doExpandSection(ctx, req)
+		if err == nil {
+			return content, nil
+		}
+		lastErr = err
+		if !isRetryable(err) || attempt == maxAttempts-1 {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-time.After(2 * time.Second):
+		}
+	}
+	return "", fmt.Errorf("正文生成重试 %d 次后仍失败: %w", maxAttempts, lastErr)
+}
+
+func (c *OpenAICompatClient) doExpandSection(ctx context.Context, req ExpandSectionRequest) (string, error) {
+	maxTokens := req.WordBudget * 3 / 2
+	if maxTokens < 1024 {
+		maxTokens = 1024
+	}
+	if maxTokens > 8192 {
+		maxTokens = 8192
+	}
+	return c.chat(ctx, buildExpandSectionPrompt(req), maxTokens)
+}
+
+func (c *OpenAICompatClient) chat(ctx context.Context, prompt string, maxTokens int) (string, error) {
+	body := map[string]interface{}{
+		"model": c.Model,
+		"messages": []map[string]string{
+			{"role": "user", "content": prompt},
+		},
+		"temperature": 0.7,
+		"max_tokens":  maxTokens,
+	}
+	raw, _ := json.Marshal(body)
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", c.BaseURL+"/chat/completions", bytes.NewReader(raw))
+	if err != nil {
+		return "", fmt.Errorf("构造请求失败: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+c.APIKey)
+
+	resp, err := c.HTTPClient.Do(httpReq)
+	if err != nil {
+		return "", fmt.Errorf("请求 LLM 失败: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return "", &HTTPError{StatusCode: resp.StatusCode, Body: string(respBody)}
+	}
+
+	var result struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return "", fmt.Errorf("解析 LLM 响应失败: %w", err)
+	}
+	if len(result.Choices) == 0 {
+		return "", fmt.Errorf("LLM 返回空 choices")
+	}
+	return strings.TrimSpace(result.Choices[0].Message.Content), nil
 }

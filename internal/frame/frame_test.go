@@ -1,6 +1,7 @@
 package frame
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 
@@ -278,5 +279,58 @@ func TestBuild_NilLLMKeepsKeyPointsEmpty(t *testing.T) {
 		if len(s.KeyPoints) != 0 {
 			t.Errorf("LLM=nil 时章节 %q 不应有 KeyPoints，实际: %v", s.Name, s.KeyPoints)
 		}
+	}
+}
+
+func TestBuild_ContentEmptyByDefault(t *testing.T) {
+	// M1 之前，Content 应由 step3 填充，step2 不应产生非空 Content
+	b := &Builder{Rules: DefaultRules(), LLM: llm.MockClient{}}
+	f, err := b.Build("t", "中国行政管理", "公共管理前沿", 10000)
+	if err != nil {
+		t.Fatalf("Build 失败: %v", err)
+	}
+	for _, s := range f.Sections {
+		if s.Content != "" {
+			t.Errorf("step2 不应填充 Content，章节 %q 实际有: %q", s.Name, s.Content)
+		}
+	}
+}
+
+// --- recordingLLM：验证 ArticleType 透传，必须实现 llm.Client 的两个方法 ---
+
+type recordingLLM struct {
+	lastReq llm.KeyPointRequest
+}
+
+func (r *recordingLLM) KeyPoints(ctx context.Context, req llm.KeyPointRequest) ([]string, error) {
+	r.lastReq = req
+	return []string{"x"}, nil
+}
+
+func (r *recordingLLM) ExpandSection(ctx context.Context, req llm.ExpandSectionRequest) (string, error) {
+	return "x", nil
+}
+
+func TestBuildWithType_ArticleTypePropagated(t *testing.T) {
+	rec := &recordingLLM{}
+	b := &Builder{Rules: DefaultRules(), LLM: rec}
+	_, err := b.BuildWithType("t", "中国行政管理", "公共管理前沿", 10000, "综述型")
+	if err != nil {
+		t.Fatalf("BuildWithType 失败: %v", err)
+	}
+	if rec.lastReq.ArticleType != "综述型" {
+		t.Errorf("ArticleType 未透传，got %q", rec.lastReq.ArticleType)
+	}
+}
+
+func TestBuild_DefaultsToEmpirical(t *testing.T) {
+	rec := &recordingLLM{}
+	b := &Builder{Rules: DefaultRules(), LLM: rec}
+	_, err := b.Build("t", "中国行政管理", "公共管理前沿", 10000)
+	if err != nil {
+		t.Fatalf("Build 失败: %v", err)
+	}
+	if rec.lastReq.ArticleType != "实证型" {
+		t.Errorf("Build 默认应为实证型，got %q", rec.lastReq.ArticleType)
 	}
 }

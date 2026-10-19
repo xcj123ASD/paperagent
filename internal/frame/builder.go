@@ -12,8 +12,6 @@ import (
 	"paperagent/internal/pipeline"
 )
 
-var ErrNotImplemented = errors.New("LLM 路径尚未接入")
-
 type Builder struct {
 	Rules CatalogRules
 	LLM   llm.Client
@@ -56,7 +54,13 @@ func fallbackColumnRule(totalWords int) ColumnRule {
 	}
 }
 
+// Build 兼容旧调用方，默认按"实证型"处理
 func (b *Builder) Build(topic, targetJournal, column string, totalWords int) (model.Frame, error) {
+	return b.BuildWithType(topic, targetJournal, column, totalWords, "实证型")
+}
+
+// BuildWithType 显式指定文章类型，供 Stage.Run 透传 step1 的 ArticleType
+func (b *Builder) BuildWithType(topic, targetJournal, column string, totalWords int, articleType string) (model.Frame, error) {
 	f := model.Frame{
 		Title: topic, TargetJournal: targetJournal, Column: column, WordCount: totalWords,
 		TitleAlt: []string{}, Keywords: []string{}, RiskHints: []string{}, FigureTablePlan: []model.FigTable{},
@@ -64,6 +68,9 @@ func (b *Builder) Build(topic, targetJournal, column string, totalWords int) (mo
 
 	if totalWords <= 0 {
 		return f, fmt.Errorf("totalWords 必须为正数，当前为 %d", totalWords)
+	}
+	if articleType == "" {
+		articleType = "实证型"
 	}
 
 	rules, ok := b.Rules[targetJournal]
@@ -113,7 +120,6 @@ func (b *Builder) Build(topic, targetJournal, column string, totalWords int) (mo
 		})
 	}
 
-	// LLM 填充 KeyPoints（结构不变，仅补内容；LLM 为 nil 时跳过）
 	if b.LLM != nil {
 		for i := range f.Sections {
 			s := &f.Sections[i]
@@ -124,7 +130,7 @@ func (b *Builder) Build(topic, targetJournal, column string, totalWords int) (mo
 				Topic:       topic,
 				Section:     s.Name,
 				Role:        s.Role,
-				ArticleType: "实证型", // TODO: 后续从 Stage.Run 透传 ArticleType
+				ArticleType: articleType,
 				MaxPoints:   4,
 			})
 			if err != nil {
@@ -243,7 +249,7 @@ func (s Stage) Run(ctx *pipeline.Context, input []byte) ([]byte, error) {
 		b = &Builder{Rules: DefaultRules()}
 	}
 
-	f, err := b.Build(s1.Topic, j.Name, column, totalWords)
+	f, err := b.BuildWithType(s1.Topic, j.Name, column, totalWords, s1.ArticleType)
 	if err != nil {
 		return nil, err
 	}
