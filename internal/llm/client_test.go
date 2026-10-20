@@ -156,7 +156,7 @@ func TestMockClient_ExpandSection_RoughlyMatchesBudget(t *testing.T) {
 // --- NewFromEnv ---
 
 func TestNewFromEnv_NoKeys_ReturnsNil(t *testing.T) {
-	t.Setenv("DASHSCOPE_API_KEY", "")
+	t.Setenv("ZAI_API_KEY", "")
 	t.Setenv("DEEPSEEK_API_KEY", "")
 	if c := NewFromEnv(); c != nil {
 		t.Fatalf("无 Key 应返回 nil，实际 %T", c)
@@ -164,35 +164,35 @@ func TestNewFromEnv_NoKeys_ReturnsNil(t *testing.T) {
 }
 
 func TestNewFromEnv_OnlyQwen(t *testing.T) {
-	t.Setenv("DASHSCOPE_API_KEY", "qwen-key")
+	t.Setenv("ZAI_API_KEY", "qwen-key")
 	t.Setenv("DEEPSEEK_API_KEY", "")
 	c := NewFromEnv()
 	oc, ok := c.(*OpenAICompatClient)
 	if !ok {
 		t.Fatalf("只设 qwen 应返回 *OpenAICompatClient，实际 %T", c)
 	}
-	if oc.Model != "qwen-flash" {
-		t.Errorf("model 应为 qwen-flash，实际 %s", oc.Model)
+	if oc.Model != "glm-5.3" {
+		t.Errorf("model 应为 glm-5.3，实际 %s", oc.Model)
 	}
 }
 
 func TestNewFromEnv_OnlyDeepSeek(t *testing.T) {
-	t.Setenv("DASHSCOPE_API_KEY", "")
+	t.Setenv("ZAI_API_KEY", "")
 	t.Setenv("DEEPSEEK_API_KEY", "ds-key")
 	c := NewFromEnv()
 	oc, ok := c.(*OpenAICompatClient)
 	if !ok {
 		t.Fatalf("只设 deepseek 应返回 *OpenAICompatClient，实际 %T", c)
 	}
-	if oc.Model != "deepseek-chat" {
-		t.Errorf("model 应为 deepseek-chat，实际 %s", oc.Model)
+	if oc.Model != "deepseek-flash" {
+		t.Errorf("model 应为 deepseek-flash，实际 %s", oc.Model)
 	}
 }
 
 func TestNewFromEnv_Both_QwenPrimary(t *testing.T) {
-	t.Setenv("DASHSCOPE_API_KEY", "qwen-key")
+	t.Setenv("ZAI_API_KEY", "qwen-key")
 	t.Setenv("DEEPSEEK_API_KEY", "ds-key")
-	t.Setenv("LLM_PROVIDER", "qwen")
+	t.Setenv("LLM_PROVIDER", "zhipu")
 	c := NewFromEnv()
 	fc, ok := c.(FallbackClient)
 	if !ok {
@@ -200,16 +200,16 @@ func TestNewFromEnv_Both_QwenPrimary(t *testing.T) {
 	}
 	p := fc.Primary.(*OpenAICompatClient)
 	b := fc.Backup.(*OpenAICompatClient)
-	if p.Model != "qwen-flash" {
-		t.Errorf("Primary 应为 qwen-flash，实际 %s", p.Model)
+	if p.Model != "glm-5.3" {
+		t.Errorf("Primary 应为 glm-5.3，实际 %s", p.Model)
 	}
-	if b.Model != "deepseek-chat" {
-		t.Errorf("Backup 应为 deepseek-chat，实际 %s", b.Model)
+	if b.Model != "deepseek-flash" {
+		t.Errorf("Backup 应为 deepseek-flash，实际 %s", b.Model)
 	}
 }
 
 func TestNewFromEnv_Both_DeepSeekPrimary(t *testing.T) {
-	t.Setenv("DASHSCOPE_API_KEY", "qwen-key")
+	t.Setenv("ZAI_API_KEY", "qwen-key")
 	t.Setenv("DEEPSEEK_API_KEY", "ds-key")
 	t.Setenv("LLM_PROVIDER", "deepseek")
 	c := NewFromEnv()
@@ -219,10 +219,10 @@ func TestNewFromEnv_Both_DeepSeekPrimary(t *testing.T) {
 	}
 	p := fc.Primary.(*OpenAICompatClient)
 	b := fc.Backup.(*OpenAICompatClient)
-	if p.Model != "deepseek-chat" {
-		t.Errorf("Primary 应为 deepseek-chat，实际 %s", p.Model)
+	if p.Model != "deepseek-flash" {
+		t.Errorf("Primary 应为 deepseek-flash，实际 %s", p.Model)
 	}
-	if b.Model != "qwen-flash" {
-		t.Errorf("Backup 应为 qwen-flash，实际 %s", b.Model)
+	if b.Model != "glm-5.3" {
+		t.Errorf("Backup 应为 glm-5.3，实际 %s", b.Model)
 	}
 }

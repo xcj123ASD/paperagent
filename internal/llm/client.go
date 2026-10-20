@@ -33,6 +33,7 @@ type ExpandSectionRequest struct {
 	PreviousSummary  string
 	RequiredEvidence []string
 	Forbidden        []string
+	Mode             model.Mode
 }
 
 type Client interface {
@@ -110,33 +111,36 @@ func NewOpenAICompat(baseURL, apiKey, model string) *OpenAICompatClient {
 }
 
 func NewFromEnv() Client {
-	qwenKey := os.Getenv("DASHSCOPE_API_KEY")
+	zhipuKey := os.Getenv("ZAI_API_KEY")
+	if zhipuKey == "" {
+		zhipuKey = os.Getenv("ZHIPU_API_KEY")
+	}
 	dsKey := os.Getenv("DEEPSEEK_API_KEY")
 
-	var qwen, deepseek Client
-	if qwenKey != "" {
-		qwen = NewOpenAICompat(
-			"https://dashscope.aliyuncs.com/compatible-mode/v1",
-			qwenKey,
-			"qwen-flash",
+	var zhipu, deepseek Client
+	if zhipuKey != "" {
+		zhipu = NewOpenAICompat(
+			"https://open.bigmodel.cn/api/paas/v4/",
+			zhipuKey,
+			"glm-5.3",
 		)
 	}
 	if dsKey != "" {
 		deepseek = NewOpenAICompat(
 			"https://api.deepseek.com",
 			dsKey,
-			"deepseek-chat",
+			"deepseek-flash",
 		)
 	}
 
 	switch {
-	case qwen != nil && deepseek != nil:
-		if os.Getenv("LLM_PROVIDER") == "deepseek" {
-			return FallbackClient{Primary: deepseek, Backup: qwen}
+	case zhipu != nil && deepseek != nil:
+		if os.Getenv("LLM_PROVIDER") == "zhipu" {
+			return FallbackClient{Primary: zhipu, Backup: deepseek}
 		}
-		return FallbackClient{Primary: qwen, Backup: deepseek}
-	case qwen != nil:
-		return qwen
+		return FallbackClient{Primary: deepseek, Backup: zhipu}
+	case zhipu != nil:
+		return zhipu
 	case deepseek != nil:
 		return deepseek
 	default:
@@ -175,6 +179,35 @@ func buildKeyPointPrompt(req KeyPointRequest) string {
 
 func buildExpandSectionPrompt(req ExpandSectionRequest) string {
 	var sb strings.Builder
+	if req.Mode == model.ModeJournal {
+		sb.WriteString(fmt.Sprintf("你是一位学术期刊论文写作助手。请为以下章节撰写学术正文，约 %d 字。\n", req.WordBudget))
+		sb.WriteString(fmt.Sprintf("论文主题：%s\n", req.Topic))
+		sb.WriteString(fmt.Sprintf("章节：%s\n", req.Section))
+		sb.WriteString(fmt.Sprintf("章节作用：%s\n", req.Role))
+		sb.WriteString(fmt.Sprintf("文章类型：%s\n", req.ArticleType))
+		if len(req.KeyPoints) > 0 {
+			sb.WriteString("本章节需要覆盖的要点：\n")
+			for _, p := range req.KeyPoints {
+				sb.WriteString("- " + p + "\n")
+			}
+		}
+		if req.PreviousSummary != "" {
+			sb.WriteString(fmt.Sprintf("前文摘要（避免重复，保持衔接）：%s\n", req.PreviousSummary))
+		}
+		if len(req.RequiredEvidence) > 0 {
+			sb.WriteString(fmt.Sprintf("必须包含的证据/表格：%s\n", strings.Join(req.RequiredEvidence, "、")))
+		}
+		if len(req.Forbidden) > 0 {
+			sb.WriteString(fmt.Sprintf("禁止出现的内容：%s\n", strings.Join(req.Forbidden, "、")))
+		}
+		sb.WriteString("要求：\n")
+		sb.WriteString("1. 学术书面语，论证严密，逻辑递进，避免罗列；\n")
+		sb.WriteString("2. 体现理论对话：引用既有研究时需指出其贡献与局限，不要简单堆砌；\n")
+		sb.WriteString("3. 不做无据推断，不编造具体数据（如回归系数、统计数字）或虚构文献；\n")
+		sb.WriteString("4. 段落分明，不要出现小标题。")
+		return sb.String()
+	}
+
 	sb.WriteString(fmt.Sprintf("你是一位学术论文写作助手。请为以下章节撰写正文，约 %d 字。\n", req.WordBudget))
 	sb.WriteString(fmt.Sprintf("论文主题：%s\n", req.Topic))
 	sb.WriteString(fmt.Sprintf("章节：%s\n", req.Section))

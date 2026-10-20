@@ -12,7 +12,10 @@ import (
 )
 
 // Stage 逐节扩写正文，填充 Section.Content
-type Stage struct{ LLM llm.Client }
+type Stage struct {
+	LLM  llm.Client
+	Mode model.Mode
+}
 
 func (Stage) Name() string { return "step3_litreview" }
 
@@ -37,6 +40,11 @@ func (s Stage) Run(ctx *pipeline.Context, input []byte) ([]byte, error) {
 		articleType = "实证型"
 	}
 
+	mode := s.Mode
+	if mode == "" {
+		mode = f.Mode
+	}
+
 	for i := range f.Sections {
 		sec := &f.Sections[i]
 
@@ -54,6 +62,7 @@ func (s Stage) Run(ctx *pipeline.Context, input []byte) ([]byte, error) {
 			PreviousSummary:  buildPreviousSummary(f.Sections, i),
 			RequiredEvidence: sec.RequiredEvidence,
 			Forbidden:        sec.Forbidden,
+			Mode:             mode,
 		}
 
 		content, err := s.LLM.ExpandSection(context.Background(), req)
