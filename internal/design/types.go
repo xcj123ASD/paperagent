@@ -152,3 +152,156 @@ sb.WriteString(fmt.Sprintf("\n补充说明：%s\n", d.Notes))
 
 return sb.String()
 }
+// RenderSection 用设计输入直接拼出“研究设计”章节正文，不走 LLM。
+// 输出 100% 稳定，变量名、模型设定与 design.json 完全一致。
+func (d DesignInput) RenderSection() string {
+	var sb strings.Builder
+
+	sb.WriteString("本研究以")
+	if d.Topic != "" {
+		sb.WriteString(d.Topic)
+		sb.WriteString("为核心问题，")
+	}
+	sb.WriteString("基于")
+	if d.DataSource != "" {
+		sb.WriteString(d.DataSource)
+	} else {
+		sb.WriteString("公开数据库")
+	}
+	sb.WriteString("构建实证样本。")
+	if d.Sample != "" {
+		sb.WriteString("样本范围为")
+		sb.WriteString(d.Sample)
+		sb.WriteString("。")
+	}
+	if d.Period != "" {
+		sb.WriteString("样本期为")
+		sb.WriteString(d.Period)
+		sb.WriteString("。")
+	}
+	if d.SampleSize != "" {
+		sb.WriteString("最终得到")
+		sb.WriteString(d.SampleSize)
+		sb.WriteString("。")
+	}
+	sb.WriteString("\n\n")
+
+	sb.WriteString("被解释变量为")
+	sb.WriteString(d.DependentVar.Name)
+	if d.DependentVar.Symbol != "" {
+		sb.WriteString("（")
+		sb.WriteString(d.DependentVar.Symbol)
+		sb.WriteString("）")
+	}
+	sb.WriteString("，采用")
+	sb.WriteString(d.DependentVar.Measure)
+	sb.WriteString("进行测度")
+	if d.DependentVar.Source != "" {
+		sb.WriteString("，数据来源于")
+		sb.WriteString(d.DependentVar.Source)
+	}
+	sb.WriteString("。")
+
+	sb.WriteString("核心解释变量为")
+	sb.WriteString(d.CoreVar.Name)
+	if d.CoreVar.Symbol != "" {
+		sb.WriteString("（")
+		sb.WriteString(d.CoreVar.Symbol)
+		sb.WriteString("）")
+	}
+	sb.WriteString("，采用")
+	sb.WriteString(d.CoreVar.Measure)
+	sb.WriteString("进行测度")
+	if d.CoreVar.Source != "" {
+		sb.WriteString("，数据来源于")
+		sb.WriteString(d.CoreVar.Source)
+	}
+	sb.WriteString("。")
+
+	if len(d.ControlVars) > 0 {
+		sb.WriteString("控制变量包括：")
+		var parts []string
+		for _, v := range d.ControlVars {
+			p := v.Name
+			if v.Symbol != "" {
+				p += "（" + v.Symbol + "）"
+			}
+			if v.Measure != "" {
+				p += "，以" + v.Measure + "测度"
+			}
+			parts = append(parts, p)
+		}
+		sb.WriteString(strings.Join(parts, "；"))
+		sb.WriteString("。")
+	}
+
+	if len(d.Mediators) > 0 {
+		sb.WriteString("中介变量包括：")
+		var parts []string
+		for _, v := range d.Mediators {
+			p := v.Name
+			if v.Measure != "" {
+				p += "（" + v.Measure + "）"
+			}
+			parts = append(parts, p)
+		}
+		sb.WriteString(strings.Join(parts, "；"))
+		sb.WriteString("。")
+	}
+
+	if len(d.Moderators) > 0 {
+		sb.WriteString("调节变量包括：")
+		var parts []string
+		for _, v := range d.Moderators {
+			p := v.Name
+			if v.Measure != "" {
+				p += "（" + v.Measure + "）"
+			}
+			parts = append(parts, p)
+		}
+		sb.WriteString(strings.Join(parts, "；"))
+		sb.WriteString("。")
+	}
+	sb.WriteString("\n\n")
+
+	sb.WriteString("在模型设定上，本文采用")
+	sb.WriteString(d.Model)
+	sb.WriteString("进行估计")
+	if len(d.FixedEffects) > 0 {
+		sb.WriteString("，控制")
+		sb.WriteString(strings.Join(d.FixedEffects, "与"))
+		sb.WriteString("固定效应")
+	}
+	if d.Clustering != "" {
+		sb.WriteString("，并使用")
+		sb.WriteString(d.Clustering)
+	}
+	sb.WriteString("。")
+
+	if len(d.Identification) > 0 {
+		sb.WriteString("为缓解内生性问题，本文采用以下识别策略：")
+		var parts []string
+		for i, s := range d.Identification {
+			parts = append(parts, fmt.Sprintf("（%d）%s", i+1, s))
+		}
+		sb.WriteString(strings.Join(parts, "；"))
+		sb.WriteString("。")
+	}
+
+	if len(d.Robustness) > 0 {
+		sb.WriteString("稳健性检验包括：")
+		var parts []string
+		for i, s := range d.Robustness {
+			parts = append(parts, fmt.Sprintf("（%d）%s", i+1, s))
+		}
+		sb.WriteString(strings.Join(parts, "；"))
+		sb.WriteString("。")
+	}
+
+	if d.Notes != "" {
+		sb.WriteString("\n\n")
+		sb.WriteString(d.Notes)
+	}
+
+	return sb.String()
+}

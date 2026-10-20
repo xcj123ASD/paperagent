@@ -40,8 +40,8 @@ func (s Stage) Run(ctx *pipeline.Context, input []byte) ([]byte, error) {
 		return nil, fmt.Errorf("step3_expand: sections 为空")
 	}
 
-	if s.LLM == nil {
-		ctx.Logf("step3_expand", "LLM 为 nil，跳过正文生成")
+	if s.LLM == nil && s.Design == nil {
+		ctx.Logf("step3_expand", "LLM 为 nil 且无 Design，跳过正文生成")
 		return json.MarshalIndent(f, "", "  ")
 	}
 
@@ -59,6 +59,21 @@ func (s Stage) Run(ctx *pipeline.Context, input []byte) ([]byte, error) {
 		sec := &f.Sections[i]
 
 		if strings.TrimSpace(sec.Content) != "" {
+			continue
+		}
+
+		// 研究设计节：有 Design 输入时用模板生成，不走 LLM，100% 稳定
+		if s.Design != nil && strings.Contains(sec.Name, "研究设计") {
+			sec.Content = s.Design.RenderSection()
+			ctx.Logf("step3_expand",
+				fmt.Sprintf("章节 %q 用模板生成，%d 字", sec.Name, len([]rune(sec.Content))))
+			continue
+		}
+
+		// 无 LLM 时，无法生成的章节写占位符，继续下一节
+		if s.LLM == nil {
+			f.RiskHints = append(f.RiskHints,
+				fmt.Sprintf("章节 %q 无 LLM 可用，未生成", sec.Name))
 			continue
 		}
 

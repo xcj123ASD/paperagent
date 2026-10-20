@@ -136,10 +136,10 @@ func NewFromEnv() Client {
 
 	switch {
 	case zhipu != nil && deepseek != nil:
-		if os.Getenv("LLM_PROVIDER") == "deepseek" {
-			return FallbackClient{Primary: deepseek, Backup: zhipu}
+		if os.Getenv("LLM_PROVIDER") == "zhipu" {
+			return FallbackClient{Primary: zhipu, Backup: deepseek}
 		}
-		return FallbackClient{Primary: zhipu, Backup: deepseek}
+		return FallbackClient{Primary: deepseek, Backup: zhipu}
 	case zhipu != nil:
 		return zhipu
 	case deepseek != nil:
@@ -350,6 +350,11 @@ func (c *OpenAICompatClient) chat(ctx context.Context, prompt string, maxTokens 
 		},
 		"temperature": 0.3,
 		"max_tokens":  maxTokens,
+	}
+	// 智谱思考模型（glm-5.x）：尝试关闭思考模式
+	// 实测该参数对 glm-5.3 不生效，reasoning_tokens 仍会占用 max_tokens
+	if strings.Contains(c.Model, "glm-5") {
+		body["thinking"] = map[string]string{"type": "disabled"}
 	}
 	raw, _ := json.Marshal(body)
 
