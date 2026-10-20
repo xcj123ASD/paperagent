@@ -14,3 +14,5 @@ references.txt
 verify_log.txt
 draft.md
 draft_*.md
+*.docx
+*.tex
