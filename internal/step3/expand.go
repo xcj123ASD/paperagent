@@ -71,7 +71,29 @@ func (s Stage) Run(ctx *pipeline.Context, input []byte) ([]byte, error) {
 				fmt.Sprintf("章节 %q 正文生成失败：%v", sec.Name, err))
 			continue
 		}
-		sec.Content = strings.TrimSpace(content)
+		content = strings.TrimSpace(content)
+
+		// 空内容或过短：重试一次
+		if len([]rune(content)) < 100 {
+			ctx.Logf("step3_expand", fmt.Sprintf("章节 %q 返回内容过短（%d 字），重试一次", sec.Name, len([]rune(content))))
+			retryContent, retryErr := s.LLM.ExpandSection(context.Background(), req)
+			if retryErr == nil {
+				retryContent = strings.TrimSpace(retryContent)
+				if len([]rune(retryContent)) >= 100 {
+					content = retryContent
+				}
+			}
+		}
+
+		// 仍然过短：记 RiskHint，写占位符，避免空白页
+		if len([]rune(content)) < 100 {
+			f.RiskHints = append(f.RiskHints,
+				fmt.Sprintf("章节 %q 生成内容过短（%d 字），需人工补充", sec.Name, len([]rune(content))))
+			content = fmt.Sprintf("*（本节内容生成不足，可能因该章节需要真实文献或数据支撑。建议在此补充：%s）*",
+				strings.Join(sec.KeyPoints, "；"))
+		}
+
+		sec.Content = content
 		ctx.Logf("step3_expand",
 			fmt.Sprintf("章节 %q 完成，%d 字（预算 %d）", sec.Name, len([]rune(sec.Content)), sec.WordBudget))
 	}

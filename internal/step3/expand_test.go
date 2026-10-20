@@ -53,7 +53,8 @@ func (r *recordExpandClient) KeyPoints(ctx context.Context, req llm.KeyPointRequ
 
 func (r *recordExpandClient) ExpandSection(ctx context.Context, req llm.ExpandSectionRequest) (string, error) {
 	r.reqs = append(r.reqs, req)
-	return req.Section + "-content", nil
+	// 返回足够长的内容（>100 字），避免触发 step3 的空内容重试逻辑
+	return req.Section + "-content " + strings.Repeat("这是一段用于测试的模拟正文内容。", 10), nil
 }
 
 func TestStage_ExpandAllSections(t *testing.T) {

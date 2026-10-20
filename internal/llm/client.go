@@ -203,7 +203,7 @@ func buildExpandSectionPrompt(req ExpandSectionRequest) string {
 		sb.WriteString("要求：\n")
 		sb.WriteString("1. 学术书面语，论证严密，逻辑递进，避免罗列；\n")
 		sb.WriteString("2. 体现理论对话：引用既有研究时需指出其贡献与局限，不要简单堆砌；\n")
-		sb.WriteString("3. 不做无据推断，不编造具体数据（如回归系数、统计数字）或虚构文献；\n")
+		sb.WriteString("3. 不做无据推断，不编造具体数据或虚构文献；但若需引用而缺来源，用占位符标注（如「（此处需补充文献）」），不要返回空内容；\n")
 		sb.WriteString("4. 段落分明，不要出现小标题。")
 		return sb.String()
 	}
@@ -228,7 +228,8 @@ func buildExpandSectionPrompt(req ExpandSectionRequest) string {
 	if len(req.Forbidden) > 0 {
 		sb.WriteString(fmt.Sprintf("禁止出现的内容：%s\n", strings.Join(req.Forbidden, "、")))
 	}
-	sb.WriteString("要求：学术书面语，段落分明，不要出现小标题，不要编造具体数据（如回归系数、统计数字）。")
+	sb.WriteString("要求：学术书面语，段落分明，不要出现小标题。\n")
+	sb.WriteString("重要：如需引用文献或报告数据但你没有真实来源，请用占位符标注，例如「（此处需补充具体文献）」「（此处需插入回归结果）」，不要虚构具体文献、作者或数据。宁可留占位符，也不要返回空内容。")
 	return sb.String()
 }
 
@@ -299,8 +300,8 @@ func (c *OpenAICompatClient) doExpandSection(ctx context.Context, req ExpandSect
 	if maxTokens < 1024 {
 		maxTokens = 1024
 	}
-	if maxTokens > 8192 {
-		maxTokens = 8192
+	if maxTokens > 16384 {
+		maxTokens = 16384
 	}
 	return c.chat(ctx, buildExpandSectionPrompt(req), maxTokens)
 }
