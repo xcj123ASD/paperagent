@@ -8,3 +8,7 @@ test_result.txt
 *.test
 *.out
 draft_*.json
+refs.json
+output_*.txt
+references.txt
+verify_log.txt
