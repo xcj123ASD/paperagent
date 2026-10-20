@@ -1,0 +1,56 @@
+[
+  {
+    "type": "article-journal",
+    "authors": ["Goldfarb A", "Tucker C"],
+    "title": "Digital Economics",
+    "container": "Journal of Economic Literature",
+    "year": 2019,
+    "volume": "57",
+    "issue": "1",
+    "pages": "3-43",
+    "doi": "10.1257/jel.20171452",
+    "lang": "en"
+  },
+  {
+    "type": "article-journal",
+    "authors": ["Brynjolfsson E", "Hitt L M"],
+    "title": "Beyond Computation: Information Technology, Organizational Transformation and Business Performance",
+    "container": "Journal of Economic Perspectives",
+    "year": 2000,
+    "volume": "14",
+    "issue": "4",
+    "pages": "23-48",
+    "doi": "10.1257/jep.14.4.23",
+    "lang": "en"
+  },
+  {
+    "type": "article-journal",
+    "authors": ["赵宸宇", "王文春", "李雪松"],
+    "title": "数字化转型如何影响企业全要素生产率",
+    "container": "财贸经济",
+    "year": 2021,
+    "volume": "42",
+    "issue": "7",
+    "pages": "114-129",
+    "lang": "zh"
+  },
+  {
+    "type": "article-journal",
+    "authors": ["吴非", "胡慧芷", "林慧妍", "任晓怡"],
+    "title": "企业数字化转型与资本市场表现——来自股票流动性的经验证据",
+    "container": "管理世界",
+    "year": 2021,
+    "volume": "37",
+    "issue": "7",
+    "pages": "130-144",
+    "lang": "zh"
+  },
+  {
+    "type": "book",
+    "authors": ["袁淳"],
+    "title": "企业数字化转型：理论、实证与案例",
+    "publisher": "经济科学出版社",
+    "year": 2022,
+    "lang": "zh"
+  }
+]

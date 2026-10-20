@@ -195,12 +195,17 @@ func formatAuthors(r Reference) string {
 	return strings.Join(names, ", ")
 }
 
-// formatEnglishAuthor 把 "John Smith" 或 "Smith, John" 转成 "Smith J" / "Smith J R"
+// formatEnglishAuthor 支持三种输入格式：
+//   - "John Smith"（名 + 姓）→ "Smith J"
+//   - "Smith, John"（姓, 名）→ "Smith J"
+//   - "Smith J" / "Goldfarb A"（姓 + 首字母，OpenAlex 格式）→ "Smith J"
 func formatEnglishAuthor(a string) string {
 	a = strings.TrimSpace(a)
 	if a == "" {
 		return ""
 	}
+
+	// 格式 2：姓, 名
 	if strings.Contains(a, ",") {
 		parts := strings.SplitN(a, ",", 2)
 		surname := strings.TrimSpace(parts[0])
@@ -211,12 +216,25 @@ func formatEnglishAuthor(a string) string {
 				initials = append(initials, string([]rune(w)[0]))
 			}
 		}
+		if len(initials) == 0 {
+			return surname
+		}
 		return surname + " " + strings.Join(initials, " ")
 	}
+
 	fields := strings.Fields(a)
 	if len(fields) == 1 {
 		return a
 	}
+
+	// 格式 3：姓 + 首字母（最后一个字段全是大写单字母或点号分隔首字母）
+	last := fields[len(fields)-1]
+	if isInitials(last) {
+		surname := strings.Join(fields[:len(fields)-1], " ")
+		return surname + " " + normalizeInitials(last)
+	}
+
+	// 格式 1：名 + 姓
 	surname := fields[len(fields)-1]
 	var initials []string
 	for _, w := range fields[:len(fields)-1] {
@@ -224,5 +242,35 @@ func formatEnglishAuthor(a string) string {
 			initials = append(initials, string([]rune(w)[0]))
 		}
 	}
+	if len(initials) == 0 {
+		return surname
+	}
 	return surname + " " + strings.Join(initials, " ")
+}
+
+// isInitials 判断字段是否是首字母形式（如 "A"、"J.R."、"JR"）
+func isInitials(s string) bool {
+	s = strings.ReplaceAll(s, ".", "")
+	s = strings.ReplaceAll(s, " ", "")
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < 'A' || r > 'Z' {
+			return false
+		}
+	}
+	return true
+}
+
+// normalizeInitials 把 "A" / "J.R." / "JR" 统一成 "A" / "J R" / "J R"
+func normalizeInitials(s string) string {
+	s = strings.ReplaceAll(s, ".", "")
+	var out []string
+	for _, r := range s {
+		if r >= 'A' && r <= 'Z' {
+			out = append(out, string(r))
+		}
+	}
+	return strings.Join(out, " ")
 }
