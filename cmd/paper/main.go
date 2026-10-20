@@ -48,11 +48,6 @@ func main() {
 		}
 		cfg.Design = &d
 		fmt.Printf("design loaded: %s\n", *designFlag)
-		dc := d.ToPromptContext()
-		fmt.Printf("design context length: %d runes\n", len([]rune(dc)))
-		if len([]rune(dc)) > 0 && len([]rune(dc)) < 300 {
-			fmt.Printf("design context preview:\n%s\n", dc)
-		}
 	}
 
 	orch := flow.New(cfg, nil)
