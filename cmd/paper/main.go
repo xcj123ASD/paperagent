@@ -11,6 +11,7 @@ import (
 
 	"paperagent/internal/cite"
 	"paperagent/internal/config"
+	"paperagent/internal/design"
 	"paperagent/internal/export"
 	"paperagent/internal/flow"
 	"paperagent/internal/model"
@@ -21,6 +22,7 @@ func main() {
 	topicFlag := flag.String("topic", "", "论文主题（为空则用 step1 默认）")
 	modeFlag := flag.String("mode", "thesis", "论文模式：thesis / journal")
 	refsFlag := flag.String("refs", "", "参考文献 JSON 路径（可选）")
+	designFlag := flag.String("design", "", "研究设计 JSON 路径（可选，补上研究设计/实证结果章节）")
 	outputFlag := flag.String("output", "draft.md", "输出 Markdown 路径")
 	verifyFlag := flag.Bool("verify", false, "是否校验参考文献真实性")
 	mailtoFlag := flag.String("mailto", "", "OpenAlex 礼貌池邮箱（可选）")
@@ -38,11 +40,29 @@ func main() {
 		os.Exit(1)
 	}
 
+	if *designFlag != "" {
+		d, err := design.Load(*designFlag)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "load design failed: %v\n", err)
+			os.Exit(1)
+		}
+		cfg.Design = &d
+		fmt.Printf("design loaded: %s\n", *designFlag)
+		dc := d.ToPromptContext()
+		fmt.Printf("design context length: %d runes\n", len([]rune(dc)))
+		if len([]rune(dc)) > 0 && len([]rune(dc)) < 300 {
+			fmt.Printf("design context preview:\n%s\n", dc)
+		}
+	}
+
 	orch := flow.New(cfg, nil)
 
 	input := map[string]interface{}{}
 	if *topicFlag != "" {
 		input["topic"] = *topicFlag
+	}
+	if cfg.Design != nil && cfg.Design.Topic != "" && *topicFlag == "" {
+		input["topic"] = cfg.Design.Topic
 	}
 	inputJSON, _ := json.Marshal(input)
 

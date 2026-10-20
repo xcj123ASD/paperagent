@@ -34,6 +34,7 @@ type ExpandSectionRequest struct {
 	RequiredEvidence []string
 	Forbidden        []string
 	Mode             model.Mode
+	DesignContext    string
 }
 
 type Client interface {
@@ -224,6 +225,11 @@ func buildExpandSectionPrompt(req ExpandSectionRequest) string {
 			sb.WriteString("- 若为实证结果：写出描述性统计框架、基准回归表结构（列名、变量名、预期方向）、稳健性检验思路、内生性处理方案；\n")
 			sb.WriteString("具体数字用「（此处需填入数据）」占位，但框架、论证逻辑、文字表述必须完整。\n")
 		}
+		if req.DesignContext != "" {
+			sb.WriteString("\n")
+			sb.WriteString(req.DesignContext)
+			sb.WriteString("\n请严格基于以上研究设计输入撰写本章节，不要虚构与输入不符的数据、变量名或方法。\n")
+		}
 		return sb.String()
 	}
 
@@ -254,6 +260,11 @@ func buildExpandSectionPrompt(req ExpandSectionRequest) string {
 		sb.WriteString("- 若为研究设计：写出数据来源说明、变量定义（变量名、符号、定义、测度方式）、模型设定（公式或方程形式）、识别策略；\n")
 		sb.WriteString("- 若为实证结果：写出描述性统计框架、基准回归表结构（列名、变量名、预期方向）、稳健性检验思路、内生性处理方案；\n")
 		sb.WriteString("具体数字用「（此处需填入数据）」占位，但框架、论证逻辑、文字表述必须完整。\n")
+	}
+	if req.DesignContext != "" {
+		sb.WriteString("\n")
+		sb.WriteString(req.DesignContext)
+		sb.WriteString("\n请严格基于以上研究设计输入撰写本章节，不要虚构与输入不符的数据、变量名或方法。\n")
 	}
 	return sb.String()
 }

@@ -31,7 +31,7 @@ func New(cfg config.Config, catalog []model.Journal) *Orchestrator {
 		llmClient = llm.MockClient{}
 	}
 
-	pipeline.Register(step3.Stage{LLM: llmClient, Mode: cfg.Mode})
+	pipeline.Register(step3.Stage{LLM: llmClient, Mode: cfg.Mode, Design: cfg.Design})
 	pipeline.Register(pipeline.Stub{Name_: "step4_design"})
 	pipeline.Register(frame.Stage{B: &frame.Builder{
 		Rules: frame.DefaultRulesWithMode(cfg.Mode),

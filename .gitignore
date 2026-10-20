@@ -16,3 +16,5 @@ draft.md
 draft_*.md
 *.docx
 *.tex
+design.json
+test_*.md

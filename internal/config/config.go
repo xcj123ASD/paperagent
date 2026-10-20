@@ -1,6 +1,9 @@
 package config
 
-import "paperagent/internal/model"
+import (
+	"paperagent/internal/design"
+	"paperagent/internal/model"
+)
 
 type Weights struct {
 	Discipline float64 `json:"discipline"`
@@ -29,4 +32,5 @@ type Config struct {
 	ModelScore string
 	ModelWrite string
 	Mode       model.Mode
+	Design     *design.DesignInput
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"paperagent/internal/design"
 	"paperagent/internal/llm"
 	"paperagent/internal/model"
 	"paperagent/internal/pipeline"
@@ -13,11 +14,20 @@ import (
 
 // Stage 逐节扩写正文，填充 Section.Content
 type Stage struct {
-	LLM  llm.Client
-	Mode model.Mode
+	LLM    llm.Client
+	Mode   model.Mode
+	Design *design.DesignInput
 }
 
 func (Stage) Name() string { return "step3_litreview" }
+
+// designContext 返回研究设计的 prompt 上下文，Design 为 nil 时返回空串。
+func (s Stage) designContext() string {
+	if s.Design == nil {
+		return ""
+	}
+	return s.Design.ToPromptContext()
+}
 
 func (s Stage) Run(ctx *pipeline.Context, input []byte) ([]byte, error) {
 	ctx.Logf("step3_expand", fmt.Sprintf("收到输入 %d 字节", len(input)))
@@ -63,6 +73,7 @@ func (s Stage) Run(ctx *pipeline.Context, input []byte) ([]byte, error) {
 			RequiredEvidence: sec.RequiredEvidence,
 			Forbidden:        sec.Forbidden,
 			Mode:             mode,
+			DesignContext:    s.designContext(),
 		}
 
 		content, err := s.LLM.ExpandSection(context.Background(), req)
