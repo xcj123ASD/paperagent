@@ -22,15 +22,16 @@ func (w Weights) Valid() bool {
 }
 
 type Config struct {
-	Mock       bool
-	Strict     bool
-	Catalog    string
-	Topic      string
-	Weights    Weights
-	BaseURL    string
-	Key        string
-	ModelScore string
-	ModelWrite string
-	Mode       model.Mode
-	Design     *design.DesignInput
+	Mock         bool
+	Strict       bool
+	Catalog      string
+	Topic        string
+	Weights      Weights
+	BaseURL      string
+	Key          string
+	ModelScore   string
+	ModelWrite   string
+	Mode         model.Mode
+	Design       *design.DesignInput
+	PolishDesign bool
 }

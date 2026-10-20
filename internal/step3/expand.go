@@ -14,9 +14,10 @@ import (
 
 // Stage 逐节扩写正文，填充 Section.Content
 type Stage struct {
-	LLM    llm.Client
-	Mode   model.Mode
-	Design *design.DesignInput
+	LLM          llm.Client
+	Mode         model.Mode
+	Design       *design.DesignInput
+	PolishDesign bool
 }
 
 func (Stage) Name() string { return "step3_litreview" }
@@ -62,15 +63,40 @@ func (s Stage) Run(ctx *pipeline.Context, input []byte) ([]byte, error) {
 			continue
 		}
 
-		// 研究设计节：有 Design 输入时用模板生成，不走 LLM，100% 稳定
+		// 研究设计节：有 Design 输入时优先模板；polish 开启时先试 LLM 润色
 		if s.Design != nil && strings.Contains(sec.Name, "研究设计") {
+			if s.PolishDesign && s.LLM != nil {
+				req := llm.ExpandSectionRequest{
+					Topic:            f.Title,
+					Section:          sec.Name,
+					Role:             sec.Role,
+					KeyPoints:        sec.KeyPoints,
+					WordBudget:       sec.WordBudget,
+					ArticleType:      articleType,
+					PreviousSummary:  buildPreviousSummary(f.Sections, i),
+					RequiredEvidence: sec.RequiredEvidence,
+					Forbidden:        sec.Forbidden,
+					Mode:             mode,
+					DesignContext:    s.designContext(),
+				}
+				polished, err := s.LLM.ExpandSection(context.Background(), req)
+				polished = strings.TrimSpace(polished)
+				if err == nil && len([]rune(polished)) >= 200 {
+					sec.Content = polished
+					ctx.Logf("step3_expand",
+						fmt.Sprintf("章节 %q 用 LLM 润色，%d 字", sec.Name, len([]rune(polished))))
+					continue
+				}
+				ctx.Logf("step3_expand",
+					fmt.Sprintf("章节 %q LLM 润色失败或过短，回落模板", sec.Name))
+			}
 			sec.Content = s.Design.RenderSection()
 			ctx.Logf("step3_expand",
 				fmt.Sprintf("章节 %q 用模板生成，%d 字", sec.Name, len([]rune(sec.Content))))
 			continue
 		}
 
-		// 无 LLM 时，无法生成的章节写占位符，继续下一节
+		// 无 LLM 时，无法生成的章节记 RiskHint 后继续
 		if s.LLM == nil {
 			f.RiskHints = append(f.RiskHints,
 				fmt.Sprintf("章节 %q 无 LLM 可用，未生成", sec.Name))
@@ -99,7 +125,6 @@ func (s Stage) Run(ctx *pipeline.Context, input []byte) ([]byte, error) {
 		}
 		content = strings.TrimSpace(content)
 
-		// 空内容或过短：重试一次
 		if len([]rune(content)) < 100 {
 			ctx.Logf("step3_expand", fmt.Sprintf("章节 %q 返回内容过短（%d 字），重试一次", sec.Name, len([]rune(content))))
 			retryContent, retryErr := s.LLM.ExpandSection(context.Background(), req)
@@ -111,7 +136,6 @@ func (s Stage) Run(ctx *pipeline.Context, input []byte) ([]byte, error) {
 			}
 		}
 
-		// 仍然过短：记 RiskHint，写占位符，避免空白页
 		if len([]rune(content)) < 100 {
 			f.RiskHints = append(f.RiskHints,
 				fmt.Sprintf("章节 %q 生成内容过短（%d 字），需人工补充", sec.Name, len([]rune(content))))
