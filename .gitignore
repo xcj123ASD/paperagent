@@ -18,3 +18,4 @@ draft_*.md
 *.tex
 design.json
 test_*.md
+load.ps1
