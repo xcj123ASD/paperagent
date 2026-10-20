@@ -21,3 +21,31 @@
 - Key 只在 $env:，不进代码不进 git
 - 终端只粘命令，不粘输出
 - 重定向用 cmd /c "... > file"
+## 十五、M1.5 完成记录（2026-10-20）
+
+| 子步 | commit | 内容 |
+|---|---|---|
+| 第 1 步 | c54608b | Mode 类型 + Config/Frame/Builder/KeyPointRequest |
+| 第 2 步 | 19cc424 | ExpandSectionRequest.Mode + journal prompt 分支 + 备用 provider 从 qwen 换为智谱 glm-5.3 |
+| 第 3 步 | 9a2a316 | orchestrator 传 cfg.Mode；cmd/step3 支持 --mode thesis/journal |
+
+### 当前可跑
+- `go run .\cmd\step3 --mode thesis` → thesis 初稿
+- `go run .\cmd\step3 --mode journal` → journal 初稿（prompt 强调理论对话/批判性/不堆砌）
+
+### 双模式生效验证
+对比两份 draft.json 的 content 风格差异，journal 应更强调理论对话，thesis 更平实。
+
+### 下一步
+M2 参考文献格式化：internal/cite/ 包，先做 GB/T 7714 格式化（纯本地，无 API），再接 OpenAlex 单向校验。
+### 双模式验证结果（2026-10-20）
+
+| 验证项 | 结果 |
+|---|---|
+| journal / thesis 均产出真实中文 | ✅ |
+| 无 Mock 输出 | ✅ |
+| 语气差异可辨识 | ✅ journal 更学术（"张力""生成性/概率性"），thesis 更平实 |
+| 理论对话（引用既有研究） | ❌ 两边都无 |
+| 结论 | 机制生效，效果受限。理论对话需等 M2 真实文献，prompt 层无法单独解决 |
+
+**已知限制**：journal prompt 里"理论对话"与"不虚构文献"互相制约，模型选择保守不引用。M2 接入真实文献后，把文献摘要喂入 prompt 才能真正实现理论对话。
