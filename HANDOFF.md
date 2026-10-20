@@ -90,3 +90,26 @@ go run .\cmd\paper --topic "数字化转型对制造业企业创新绩效的影�
 
 ### 对 M3 的启示
 M3 的优先级应提高。研究设计辅助不是"锦上添花"，是补上当前工具最大缺口的必要模块。
+## 二十、温度与模型实验结论（2026-10-20）
+
+### 对比实验
+
+| 配置 | 空的章节 |
+|---|---|
+| DeepSeek + temperature 0.7 | 3 节（文献综述、研究设计、实证结果） |
+| DeepSeek + temperature 0.3 | 1 节（实证结果） |
+| **智谱 glm-5.3 + temperature 0.3** | **0 节** ✅ |
+
+### 结论（关键）
+1. **temperature 是空白的主因**：0.7 → 0.3，空白从 3 节降到 1 节
+2. **智谱比 DeepSeek 更配合中文实证论文写作**：同温度下 0 节 vs 1 节
+3. 默认 provider 已从 deepseek 改为 zhipu（`LLM_PROVIDER=deepseek` 才用 DeepSeek 主）
+4. `env.ps1` 的 `LLM_PROVIDER` 也改为 zhipu
+
+### 对之前"M3.1 结论"的修正
+之前记录"prompt 层已到极限"不准确——真正的瓶颈是 temperature 配置错误。
+temperature 0.3 + 智谱 = 0 节空，不需要继续调 prompt。
+
+### 后续注意
+- 不要随意调高 temperature
+- 如果换模型，先用 design.json + refs_real.json 跑一次对比空节数
