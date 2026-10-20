@@ -136,10 +136,10 @@ func NewFromEnv() Client {
 
 	switch {
 	case zhipu != nil && deepseek != nil:
-		if os.Getenv("LLM_PROVIDER") == "zhipu" {
-			return FallbackClient{Primary: zhipu, Backup: deepseek}
+		if os.Getenv("LLM_PROVIDER") == "deepseek" {
+			return FallbackClient{Primary: deepseek, Backup: zhipu}
 		}
-		return FallbackClient{Primary: deepseek, Backup: zhipu}
+		return FallbackClient{Primary: zhipu, Backup: deepseek}
 	case zhipu != nil:
 		return zhipu
 	case deepseek != nil:
@@ -348,7 +348,7 @@ func (c *OpenAICompatClient) chat(ctx context.Context, prompt string, maxTokens 
 		"messages": []map[string]string{
 			{"role": "user", "content": prompt},
 		},
-		"temperature": 0.7,
+		"temperature": 0.3,
 		"max_tokens":  maxTokens,
 	}
 	raw, _ := json.Marshal(body)
