@@ -177,8 +177,21 @@ func buildKeyPointPrompt(req KeyPointRequest) string {
 	)
 }
 
+// needsDataSection 判断章节是否属于“需要真实数据支撑”的类型。
+func needsDataSection(name string) bool {
+	keywords := []string{"研究设计", "实证结果", "数据分析", "研究方法", "模型设定", "变量测度"}
+	for _, k := range keywords {
+		if strings.Contains(name, k) {
+			return true
+		}
+	}
+	return false
+}
+
 func buildExpandSectionPrompt(req ExpandSectionRequest) string {
 	var sb strings.Builder
+	needsData := needsDataSection(req.Section)
+
 	if req.Mode == model.ModeJournal {
 		sb.WriteString(fmt.Sprintf("你是一位学术期刊论文写作助手。请为以下章节撰写学术正文，约 %d 字。\n", req.WordBudget))
 		sb.WriteString(fmt.Sprintf("论文主题：%s\n", req.Topic))
@@ -204,7 +217,13 @@ func buildExpandSectionPrompt(req ExpandSectionRequest) string {
 		sb.WriteString("1. 学术书面语，论证严密，逻辑递进，避免罗列；\n")
 		sb.WriteString("2. 体现理论对话：引用既有研究时需指出其贡献与局限，不要简单堆砌；\n")
 		sb.WriteString("3. 不做无据推断，不编造具体数据或虚构文献；但若需引用而缺来源，用占位符标注（如「（此处需补充文献）」），不要返回空内容；\n")
-		sb.WriteString("4. 段落分明，不要出现小标题。")
+		sb.WriteString("4. 段落分明，不要出现小标题。\n")
+		if needsData {
+			sb.WriteString("\n本章节属于需要真实数据支撑的类型。即使没有真实数据，也必须写出完整的分析框架，不得返回空内容：\n")
+			sb.WriteString("- 若为研究设计：写出数据来源说明、变量定义（变量名、符号、定义、测度方式）、模型设定（公式或方程形式）、识别策略；\n")
+			sb.WriteString("- 若为实证结果：写出描述性统计框架、基准回归表结构（列名、变量名、预期方向）、稳健性检验思路、内生性处理方案；\n")
+			sb.WriteString("具体数字用「（此处需填入数据）」占位，但框架、论证逻辑、文字表述必须完整。\n")
+		}
 		return sb.String()
 	}
 
@@ -229,7 +248,13 @@ func buildExpandSectionPrompt(req ExpandSectionRequest) string {
 		sb.WriteString(fmt.Sprintf("禁止出现的内容：%s\n", strings.Join(req.Forbidden, "、")))
 	}
 	sb.WriteString("要求：学术书面语，段落分明，不要出现小标题。\n")
-	sb.WriteString("重要：如需引用文献或报告数据但你没有真实来源，请用占位符标注，例如「（此处需补充具体文献）」「（此处需插入回归结果）」，不要虚构具体文献、作者或数据。宁可留占位符，也不要返回空内容。")
+	sb.WriteString("重要：如需引用文献或报告数据但你没有真实来源，请用占位符标注，例如「（此处需补充具体文献）」「（此处需插入回归结果）」，不要虚构具体文献、作者或数据。宁可留占位符，也不要返回空内容。\n")
+	if needsData {
+		sb.WriteString("\n本章节属于需要真实数据支撑的类型。即使没有真实数据，也必须写出完整的分析框架，不得返回空内容：\n")
+		sb.WriteString("- 若为研究设计：写出数据来源说明、变量定义（变量名、符号、定义、测度方式）、模型设定（公式或方程形式）、识别策略；\n")
+		sb.WriteString("- 若为实证结果：写出描述性统计框架、基准回归表结构（列名、变量名、预期方向）、稳健性检验思路、内生性处理方案；\n")
+		sb.WriteString("具体数字用「（此处需填入数据）」占位，但框架、论证逻辑、文字表述必须完整。\n")
+	}
 	return sb.String()
 }
 

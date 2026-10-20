@@ -13,3 +13,4 @@ output_*.txt
 references.txt
 verify_log.txt
 draft.md
+draft_*.md
