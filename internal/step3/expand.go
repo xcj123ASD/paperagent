@@ -14,7 +14,6 @@ import (
 )
 
 // llmTimeout 单次 LLM 调用的超时上限。
-// 一节写 1000–2000 字，正常 30–60 秒完成，90 秒是安全上限。
 const llmTimeout = 90 * time.Second
 
 // Stage 逐节扩写正文，填充 Section.Content
@@ -27,14 +26,13 @@ type Stage struct {
 
 func (Stage) Name() string { return "step3_litreview" }
 
-// callLLM 带超时的 LLM 调用包装，防止单节卡死挂住全流程。
+// callLLM 带超时的 LLM 调用包装。
 func (s Stage) callLLM(req llm.ExpandSectionRequest) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), llmTimeout)
 	defer cancel()
 	return s.LLM.ExpandSection(ctx, req)
 }
 
-// designContext 返回研究设计的 prompt 上下文，Design 为 nil 时返回空串。
 func (s Stage) designContext() string {
 	if s.Design == nil {
 		return ""
@@ -75,7 +73,6 @@ func (s Stage) Run(ctx *pipeline.Context, input []byte) ([]byte, error) {
 			continue
 		}
 
-		// 研究设计节：有 Design 输入时优先模板；polish 开启时先试 LLM 润色
 		if s.Design != nil && strings.Contains(sec.Name, "研究设计") {
 			if s.PolishDesign && s.LLM != nil {
 				req := llm.ExpandSectionRequest{
@@ -108,7 +105,6 @@ func (s Stage) Run(ctx *pipeline.Context, input []byte) ([]byte, error) {
 			continue
 		}
 
-		// 无 LLM 时，无法生成的章节记 RiskHint 后继续
 		if s.LLM == nil {
 			f.RiskHints = append(f.RiskHints,
 				fmt.Sprintf("章节 %q 无 LLM 可用，未生成", sec.Name))
@@ -137,7 +133,6 @@ func (s Stage) Run(ctx *pipeline.Context, input []byte) ([]byte, error) {
 		}
 		content = strings.TrimSpace(content)
 
-		// 空内容或过短：重试一次
 		if len([]rune(content)) < 100 {
 			ctx.Logf("step3_expand", fmt.Sprintf("章节 %q 返回内容过短（%d 字），重试一次", sec.Name, len([]rune(content))))
 			retryContent, retryErr := s.callLLM(req)
@@ -149,12 +144,22 @@ func (s Stage) Run(ctx *pipeline.Context, input []byte) ([]byte, error) {
 			}
 		}
 
-		// 仍然过短：记 RiskHint，写占位符，避免空白页
+		// 仍然过短：记 RiskHint，写占位符
 		if len([]rune(content)) < 100 {
 			f.RiskHints = append(f.RiskHints,
-				fmt.Sprintf("章节 %q 生成内容过短（%d 字），需人工补充", sec.Name, len([]rune(content))))
+				fmt.Sprintf("章节 %q 生成内容过短（%d 字，预算 %d 字），需人工补充",
+					sec.Name, len([]rune(content)), sec.WordBudget))
 			content = fmt.Sprintf("*（本节内容生成不足，可能因该章节需要真实文献或数据支撑。建议在此补充：%s）*",
 				strings.Join(sec.KeyPoints, "；"))
+		} else if sec.WordBudget > 0 {
+			// 内容有效：校验实际字数与预算的偏差
+			actualLen := len([]rune(content))
+			ratio := float64(actualLen) / float64(sec.WordBudget)
+			if ratio < 0.7 || ratio > 1.3 {
+				f.RiskHints = append(f.RiskHints,
+					fmt.Sprintf("章节 %q 字数偏差较大：实际 %d 字，预算 %d 字（偏差 %+.0f%%）",
+						sec.Name, actualLen, sec.WordBudget, (ratio-1)*100))
+			}
 		}
 
 		sec.Content = content
