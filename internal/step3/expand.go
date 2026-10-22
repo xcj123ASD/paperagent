@@ -5,12 +5,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"paperagent/internal/design"
 	"paperagent/internal/llm"
 	"paperagent/internal/model"
 	"paperagent/internal/pipeline"
 )
+
+// llmTimeout 单次 LLM 调用的超时上限。
+// 一节写 1000–2000 字，正常 30–60 秒完成，90 秒是安全上限。
+const llmTimeout = 90 * time.Second
 
 // Stage 逐节扩写正文，填充 Section.Content
 type Stage struct {
@@ -21,6 +26,13 @@ type Stage struct {
 }
 
 func (Stage) Name() string { return "step3_litreview" }
+
+// callLLM 带超时的 LLM 调用包装，防止单节卡死挂住全流程。
+func (s Stage) callLLM(req llm.ExpandSectionRequest) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), llmTimeout)
+	defer cancel()
+	return s.LLM.ExpandSection(ctx, req)
+}
 
 // designContext 返回研究设计的 prompt 上下文，Design 为 nil 时返回空串。
 func (s Stage) designContext() string {
@@ -79,7 +91,7 @@ func (s Stage) Run(ctx *pipeline.Context, input []byte) ([]byte, error) {
 					Mode:             mode,
 					DesignContext:    s.designContext(),
 				}
-				polished, err := s.LLM.ExpandSection(context.Background(), req)
+				polished, err := s.callLLM(req)
 				polished = strings.TrimSpace(polished)
 				if err == nil && len([]rune(polished)) >= 200 {
 					sec.Content = polished
@@ -117,7 +129,7 @@ func (s Stage) Run(ctx *pipeline.Context, input []byte) ([]byte, error) {
 			DesignContext:    s.designContext(),
 		}
 
-		content, err := s.LLM.ExpandSection(context.Background(), req)
+		content, err := s.callLLM(req)
 		if err != nil {
 			f.RiskHints = append(f.RiskHints,
 				fmt.Sprintf("章节 %q 正文生成失败：%v", sec.Name, err))
@@ -125,9 +137,10 @@ func (s Stage) Run(ctx *pipeline.Context, input []byte) ([]byte, error) {
 		}
 		content = strings.TrimSpace(content)
 
+		// 空内容或过短：重试一次
 		if len([]rune(content)) < 100 {
 			ctx.Logf("step3_expand", fmt.Sprintf("章节 %q 返回内容过短（%d 字），重试一次", sec.Name, len([]rune(content))))
-			retryContent, retryErr := s.LLM.ExpandSection(context.Background(), req)
+			retryContent, retryErr := s.callLLM(req)
 			if retryErr == nil {
 				retryContent = strings.TrimSpace(retryContent)
 				if len([]rune(retryContent)) >= 100 {
@@ -136,6 +149,7 @@ func (s Stage) Run(ctx *pipeline.Context, input []byte) ([]byte, error) {
 			}
 		}
 
+		// 仍然过短：记 RiskHint，写占位符，避免空白页
 		if len([]rune(content)) < 100 {
 			f.RiskHints = append(f.RiskHints,
 				fmt.Sprintf("章节 %q 生成内容过短（%d 字），需人工补充", sec.Name, len([]rune(content))))
