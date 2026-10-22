@@ -19,23 +19,28 @@ import (
 )
 
 func main() {
-	if err := run(); err != nil {
+	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
-func run() error {
-	topicFlag := flag.String("topic", "", "论文主题（为空则用 step1 默认）")
-	modeFlag := flag.String("mode", "thesis", "论文模式：thesis / journal")
-	refsFlag := flag.String("refs", "", "参考文献 JSON 路径（可选）")
-	designFlag := flag.String("design", "", "研究设计 JSON 路径（可选，补上研究设计/实证结果章节）")
-	polishDesignFlag := flag.Bool("polish-design", false, "研究设计节先用 LLM 润色，失败回落模板（默认直接用模板）")
-	outputFlag := flag.String("output", "draft.md", "输出 Markdown 路径")
-	verifyFlag := flag.Bool("verify", false, "是否校验参考文献真实性")
-	mailtoFlag := flag.String("mailto", "", "OpenAlex 礼貌池邮箱（可选）")
-	exportFlag := flag.String("export", "", "导出格式：docx / tex / html（为空则只生成 md）")
-	flag.Parse()
+func run(args []string) error {
+	fs := flag.NewFlagSet("paper", flag.ContinueOnError)
+
+	topicFlag := fs.String("topic", "", "论文主题（为空则用 step1 默认）")
+	modeFlag := fs.String("mode", "thesis", "论文模式：thesis / journal")
+	refsFlag := fs.String("refs", "", "参考文献 JSON 路径（可选）")
+	designFlag := fs.String("design", "", "研究设计 JSON 路径（可选，补上研究设计/实证结果章节）")
+	polishDesignFlag := fs.Bool("polish-design", false, "研究设计节先用 LLM 润色，失败回落模板（默认直接用模板）")
+	outputFlag := fs.String("output", "draft.md", "输出 Markdown 路径")
+	verifyFlag := fs.Bool("verify", false, "是否校验参考文献真实性")
+	mailtoFlag := fs.String("mailto", "", "OpenAlex 礼貌池邮箱（可选）")
+	exportFlag := fs.String("export", "", "导出格式：docx / tex / html（为空则只生成 md）")
+
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
 
 	cfg := config.Config{Mock: true}
 	cfg.Weights = config.DefaultWeights()
