@@ -17,7 +17,7 @@ func MatchJournals(topic, discipline, sub string, keywords []string, catalog []m
 	}
 	kw := lowerSet(keywords)
 	items := make([]struct {
-		j      model.Journal
+		j          model.Journal
 		d, c, q, h float64
 	}, len(catalog))
 	for i, j := range catalog {
@@ -31,8 +31,12 @@ func MatchJournals(topic, discipline, sub string, keywords []string, catalog []m
 		a, b := math.MaxFloat64, -math.MaxFloat64
 		for i := range items {
 			v := f(i)
-			if v < a { a = v }
-			if v > b { b = v }
+			if v < a {
+				a = v
+			}
+			if v > b {
+				b = v
+			}
 		}
 		return a, b
 	}
