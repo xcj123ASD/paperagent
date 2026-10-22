@@ -42,6 +42,9 @@ type DesignInput struct {
 
 	// 补充说明
 	Notes string `json:"notes"` // 其他说明，可选
+
+	// 实证结果（可选，用于生成"实证结果"节；为空时走占位兜底）
+	Results *ResultsInput `json:"results,omitempty"`
 }
 
 // Validate 检查必填字段，返回人类可读的错误。
