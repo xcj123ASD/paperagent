@@ -345,9 +345,10 @@ func (c *OpenAICompatClient) ExpandSection(ctx context.Context, req ExpandSectio
 }
 
 func (c *OpenAICompatClient) doExpandSection(ctx context.Context, req ExpandSectionRequest) (string, error) {
-	maxTokens := req.WordBudget * 3 / 2
-	if maxTokens < 1024 {
-		maxTokens = 1024
+	// 中文约 1.5–2 token/字，按 2 倍预算留足余量，避免长章节被截断
+	maxTokens := req.WordBudget * 2
+	if maxTokens < 2048 {
+		maxTokens = 2048
 	}
 	if maxTokens > 16384 {
 		maxTokens = 16384
