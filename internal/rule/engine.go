@@ -15,7 +15,7 @@ func (e *Engine) ValidateTopic(t string, keywords []string) []model.Check {
 			out = append(out, model.Check{Level: "warn", Stage: "rule", Msg: "标题含降格词：" + b})
 		}
 	}
-	if len(t) > 40 {
+	if len([]rune(t)) > 40 {
 		out = append(out, model.Check{Level: "warn", Stage: "rule", Msg: "标题超过 40 字，建议收窄"})
 	}
 	if len(keywords) == 0 {
