@@ -39,6 +39,10 @@ type StataRequest struct {
 }
 
 // Validate 检查必填字段与模型类型，防止生成空命令或未支持的模型。
+//
+// 分模型校验：
+//   - did 必须提供 did_treatment 与 did_time，否则交互项语法会渲染成 c.##i.
+//   - iv  必须提供 instrument，否则 2sls 括号内为空
 func (r StataRequest) Validate() error {
 	var missing []string
 	if strings.TrimSpace(r.DataPath) == "" {
@@ -58,7 +62,18 @@ func (r StataRequest) Validate() error {
 	}
 
 	switch r.Model {
-	case "ols", "fe", "did", "iv":
+	case "ols", "fe":
+	case "did":
+		if strings.TrimSpace(r.DIDTreatment) == "" {
+			return fmt.Errorf("stata: model=did 时 did_treatment 必填")
+		}
+		if strings.TrimSpace(r.DIDTime) == "" {
+			return fmt.Errorf("stata: model=did 时 did_time 必填")
+		}
+	case "iv":
+		if strings.TrimSpace(r.Instrument) == "" {
+			return fmt.Errorf("stata: model=iv 时 instrument 必填")
+		}
 	default:
 		return fmt.Errorf("stata: 不支持的模型类型 %q，应为 ols/fe/did/iv", r.Model)
 	}
