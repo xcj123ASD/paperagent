@@ -105,6 +105,14 @@ func (s Stage) Run(ctx *pipeline.Context, input []byte) ([]byte, error) {
 			continue
 		}
 
+		// 实证结果节走模板（与"研究设计"节同模式），优先于 LLM
+		if s.Design != nil && isResultsSection(sec.Name) {
+			sec.Content = design.RenderResultsSection(s.Design.Results)
+			ctx.Logf("step3_expand",
+				fmt.Sprintf("章节 %q 用模板生成，%d 字", sec.Name, len([]rune(sec.Content))))
+			continue
+		}
+
 		if s.LLM == nil {
 			f.RiskHints = append(f.RiskHints,
 				fmt.Sprintf("章节 %q 无 LLM 可用，未生成", sec.Name))
@@ -199,4 +207,15 @@ func buildPreviousSummary(sections []model.Section, currentIdx int) string {
 		}
 	}
 	return sb.String()
+}
+
+// isResultsSection 判断章节名是否为"实证结果"类章节。
+// 与"研究设计"节同模式走模板，避免 LLM 拒写导致空白。
+func isResultsSection(name string) bool {
+	for _, kw := range []string{"实证结果", "实证分析", "回归结果"} {
+		if strings.Contains(name, kw) {
+			return true
+		}
+	}
+	return false
 }
