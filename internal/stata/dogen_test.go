@@ -54,7 +54,8 @@ func TestGenerate_FE(t *testing.T) {
 }
 
 func TestGenerate_NoFreeCommandRegion(t *testing.T) {
-	// 安全回归：模板生成物中不应出现危险命令
+	// 安全回归：模板生成物必须过 CheckSafety。
+	// 危险命令列表由 safety.go 的 CheckSafety 统一维护，此处不重复定义。
 	req := StataRequest{
 		DataPath:   "data.dta",
 		OutputPath: "out.csv",
@@ -66,10 +67,8 @@ func TestGenerate_NoFreeCommandRegion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Generate 失败: %v", err)
 	}
-	for _, bad := range []string{"!cmd", "shell ", "!del", "rm ", "erase "} {
-		if strings.Contains(out, bad) {
-			t.Errorf("输出含危险命令 %q，违反安全红线\n实际:\n%s", bad, out)
-		}
+	if err := CheckSafety(out); err != nil {
+		t.Errorf("模板生成物含危险命令，违反安全红线: %v\n实际:\n%s", err, out)
 	}
 }
 
