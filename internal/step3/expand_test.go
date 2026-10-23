@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"paperagent/internal/design"
 	"paperagent/internal/llm"
 	"paperagent/internal/model"
 	"paperagent/internal/pipeline"
@@ -33,6 +34,20 @@ func simpleFrame() model.Frame {
 	}
 }
 
+// introConclFrame 构造含"引言"与"结论"两节的 Frame，专门测试模板兜底。
+// 不含"文献综述"节，避免综述分支干扰。
+func introConclFrame() model.Frame {
+	return model.Frame{
+		Title:       "基层治理数字化",
+		ArticleType: "实证型",
+		WordCount:   2000,
+		Sections: []model.Section{
+			{Name: "引言", Role: "提出问题与研究意义", WordBudget: 1000, KeyPoints: []string{"背景", "意义"}},
+			{Name: "结论与政策启示", Role: "总结发现与政策建议", WordBudget: 1000, KeyPoints: []string{"发现", "政策"}},
+		},
+	}
+}
+
 type failExpandClient struct{}
 
 func (failExpandClient) KeyPoints(ctx context.Context, req llm.KeyPointRequest) ([]string, error) {
@@ -41,6 +56,17 @@ func (failExpandClient) KeyPoints(ctx context.Context, req llm.KeyPointRequest) 
 
 func (failExpandClient) ExpandSection(ctx context.Context, req llm.ExpandSectionRequest) (string, error) {
 	return "", errors.New("mock expand fail")
+}
+
+// shortExpandClient 返回成功但 <100 字的内容，触发"过短→重试→仍过短"路径。
+type shortExpandClient struct{}
+
+func (shortExpandClient) KeyPoints(ctx context.Context, req llm.KeyPointRequest) ([]string, error) {
+	return []string{"x"}, nil
+}
+
+func (shortExpandClient) ExpandSection(ctx context.Context, req llm.ExpandSectionRequest) (string, error) {
+	return "太短", nil
 }
 
 type recordExpandClient struct {
@@ -192,5 +218,63 @@ func TestStage_ArticleTypePropagated(t *testing.T) {
 		if r.ArticleType != "综述型" {
 			t.Errorf("ArticleType 未透传，got %q", r.ArticleType)
 		}
+	}
+}
+
+func TestStage_IntroTooShort_UseTemplate(t *testing.T) {
+	d := &design.DesignInput{
+		Topic: "测试主题",
+		Model: "双向固定效应模型",
+	}
+	input := makeFrameJSON(t, introConclFrame())
+	ctx := pipeline.NewContext(true, false)
+	out, err := Stage{LLM: shortExpandClient{}, Design: d}.Run(ctx, input)
+	if err != nil {
+		t.Fatalf("Run 失败: %v", err)
+	}
+	var got model.Frame
+	if err := json.Unmarshal(out, &got); err != nil {
+		t.Fatalf("解析输出失败: %v", err)
+	}
+	var intro model.Section
+	for _, s := range got.Sections {
+		if s.Name == "引言" {
+			intro = s
+		}
+	}
+	if strings.Contains(intro.Content, "本节内容生成不足") {
+		t.Errorf("引言过短时应走模板兜底而非占位符，实际: %s", intro.Content)
+	}
+	if !strings.Contains(intro.Content, "本文余下部分安排如下") {
+		t.Errorf("引言应含模板特征'本文余下部分安排如下'，实际: %s", intro.Content)
+	}
+}
+
+func TestStage_ConclusionTooShort_UseTemplate(t *testing.T) {
+	d := &design.DesignInput{
+		Topic: "测试主题",
+		Model: "双向固定效应模型",
+	}
+	input := makeFrameJSON(t, introConclFrame())
+	ctx := pipeline.NewContext(true, false)
+	out, err := Stage{LLM: shortExpandClient{}, Design: d}.Run(ctx, input)
+	if err != nil {
+		t.Fatalf("Run 失败: %v", err)
+	}
+	var got model.Frame
+	if err := json.Unmarshal(out, &got); err != nil {
+		t.Fatalf("解析输出失败: %v", err)
+	}
+	var concl model.Section
+	for _, s := range got.Sections {
+		if s.Name == "结论与政策启示" {
+			concl = s
+		}
+	}
+	if strings.Contains(concl.Content, "本节内容生成不足") {
+		t.Errorf("结论过短时应走模板兜底而非占位符，实际: %s", concl.Content)
+	}
+	if !strings.Contains(concl.Content, "本文仍存在一定局限") {
+		t.Errorf("结论应含模板特征'本文仍存在一定局限'，实际: %s", concl.Content)
 	}
 }

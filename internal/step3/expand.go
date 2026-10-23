@@ -190,13 +190,24 @@ func (s Stage) Run(ctx *pipeline.Context, input []byte) ([]byte, error) {
 			}
 		}
 
-		// 仍然过短：记 RiskHint，写占位符
+		// 仍然过短：引言/结论走模板兜底，其他节记 RiskHint 写占位符
 		if len([]rune(content)) < 100 {
-			f.RiskHints = append(f.RiskHints,
-				fmt.Sprintf("章节 %q 生成内容过短（%d 字，预算 %d 字），需人工补充",
-					sec.Name, len([]rune(content)), sec.WordBudget))
-			content = fmt.Sprintf("*（本节内容生成不足，可能因该章节需要真实文献或数据支撑。建议在此补充：%s）*",
-				strings.Join(sec.KeyPoints, "；"))
+			switch {
+			case s.Design != nil && isIntroSection(sec.Name):
+				content = s.Design.RenderIntro()
+				ctx.Logf("step3_expand",
+					fmt.Sprintf("章节 %q 用引言模板兜底，%d 字", sec.Name, len([]rune(content))))
+			case s.Design != nil && isConclusionSection(sec.Name):
+				content = s.Design.RenderConclusion()
+				ctx.Logf("step3_expand",
+					fmt.Sprintf("章节 %q 用结论模板兜底，%d 字", sec.Name, len([]rune(content))))
+			default:
+				f.RiskHints = append(f.RiskHints,
+					fmt.Sprintf("章节 %q 生成内容过短（%d 字，预算 %d 字），需人工补充",
+						sec.Name, len([]rune(content)), sec.WordBudget))
+				content = fmt.Sprintf("*（本节内容生成不足，可能因该章节需要真实文献或数据支撑。建议在此补充：%s）*",
+					strings.Join(sec.KeyPoints, "；"))
+			}
 		} else if sec.WordBudget > 0 {
 			// 内容有效：校验实际字数与预算的偏差
 			actualLen := len([]rune(content))
@@ -262,6 +273,28 @@ func isResultsSection(name string) bool {
 // 走骨架 + LLM 带 refs 润色模式，骨架兜底不空白。
 func isLitReviewSection(name string) bool {
 	for _, kw := range []string{"文献综述", "文献回顾", "文献评述"} {
+		if strings.Contains(name, kw) {
+			return true
+		}
+	}
+	return false
+}
+
+// isIntroSection 判断章节名是否为"引言"类章节。
+// LLM 过短时用引言模板兜底。
+func isIntroSection(name string) bool {
+	for _, kw := range []string{"引言", "绪论", "导论"} {
+		if strings.Contains(name, kw) {
+			return true
+		}
+	}
+	return false
+}
+
+// isConclusionSection 判断章节名是否为"结论"类章节。
+// LLM 过短时用结论模板兜底。
+func isConclusionSection(name string) bool {
+	for _, kw := range []string{"结论", "结语"} {
 		if strings.Contains(name, kw) {
 			return true
 		}
