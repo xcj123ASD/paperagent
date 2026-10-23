@@ -62,6 +62,16 @@ func run(args []string) error {
 		fmt.Printf("design loaded: %s\n", *designFlag)
 	}
 
+	if *refsFlag != "" {
+		refs, err := cite.LoadRefs(*refsFlag)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "load refs for step3 failed (continuing without refs): %v\n", err)
+		} else {
+			cfg.Refs = refs
+			fmt.Printf("refs loaded for step3: %d refs\n", len(refs))
+		}
+	}
+
 	orch := flow.New(cfg, nil)
 
 	input := map[string]interface{}{}

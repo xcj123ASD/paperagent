@@ -1,6 +1,7 @@
 package config
 
 import (
+	"paperagent/internal/cite"
 	"paperagent/internal/design"
 	"paperagent/internal/model"
 )
@@ -34,4 +35,5 @@ type Config struct {
 	Mode         model.Mode
 	Design       *design.DesignInput
 	PolishDesign bool
+	Refs         []cite.Reference
 }

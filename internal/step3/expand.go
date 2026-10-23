@@ -7,7 +7,9 @@ import (
 	"strings"
 	"time"
 
+	"paperagent/internal/cite"
 	"paperagent/internal/design"
+	"paperagent/internal/litreview"
 	"paperagent/internal/llm"
 	"paperagent/internal/model"
 	"paperagent/internal/pipeline"
@@ -22,6 +24,7 @@ type Stage struct {
 	Mode         model.Mode
 	Design       *design.DesignInput
 	PolishDesign bool
+	Refs         []cite.Reference
 }
 
 func (Stage) Name() string { return "step3_litreview" }
@@ -110,6 +113,41 @@ func (s Stage) Run(ctx *pipeline.Context, input []byte) ([]byte, error) {
 			sec.Content = design.RenderResultsSection(s.Design.Results)
 			ctx.Logf("step3_expand",
 				fmt.Sprintf("章节 %q 用模板生成，%d 字", sec.Name, len([]rune(sec.Content))))
+			continue
+		}
+
+		// 文献综述节：骨架兜底 + LLM 带 refs 润色，失败回落骨架
+		if isLitReviewSection(sec.Name) {
+			skeleton := litreview.RenderSkeleton(s.Refs)
+			if s.LLM != nil {
+				req := llm.ExpandSectionRequest{
+					Topic:            f.Title,
+					Section:          sec.Name,
+					Role:             sec.Role,
+					KeyPoints:        sec.KeyPoints,
+					WordBudget:       sec.WordBudget,
+					ArticleType:      articleType,
+					PreviousSummary:  buildPreviousSummary(f.Sections, i),
+					RequiredEvidence: sec.RequiredEvidence,
+					Forbidden:        sec.Forbidden,
+					Mode:             mode,
+					DesignContext:    s.designContext(),
+					References:       formatRefsForPrompt(s.Refs),
+				}
+				polished, err := s.callLLM(req)
+				polished = strings.TrimSpace(polished)
+				if err == nil && len([]rune(polished)) >= 200 {
+					sec.Content = polished
+					ctx.Logf("step3_expand",
+						fmt.Sprintf("章节 %q 用 LLM 带文献润色，%d 字", sec.Name, len([]rune(polished))))
+					continue
+				}
+				ctx.Logf("step3_expand",
+					fmt.Sprintf("章节 %q LLM 润色失败或过短，回落骨架", sec.Name))
+			}
+			sec.Content = skeleton
+			ctx.Logf("step3_expand",
+				fmt.Sprintf("章节 %q 用骨架生成，%d 字", sec.Name, len([]rune(sec.Content))))
 			continue
 		}
 
@@ -218,4 +256,42 @@ func isResultsSection(name string) bool {
 		}
 	}
 	return false
+}
+
+// isLitReviewSection 判断章节名是否为"文献综述"类章节。
+// 走骨架 + LLM 带 refs 润色模式，骨架兜底不空白。
+func isLitReviewSection(name string) bool {
+	for _, kw := range []string{"文献综述", "文献回顾", "文献评述"} {
+		if strings.Contains(name, kw) {
+			return true
+		}
+	}
+	return false
+}
+
+// formatRefsForPrompt 把参考文献转成给 LLM 的简短列表，形如 "张三(2023)《标题》"。
+func formatRefsForPrompt(refs []cite.Reference) []string {
+	if len(refs) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(refs))
+	for _, r := range refs {
+		author := "佚名"
+		if len(r.Authors) > 0 {
+			author = r.Authors[0]
+			if len(r.Authors) > 1 {
+				author += "等"
+			}
+		}
+		year := "n.d."
+		if r.Year > 0 {
+			year = fmt.Sprintf("%d", r.Year)
+		}
+		title := r.Title
+		if title == "" {
+			title = "（无标题）"
+		}
+		out = append(out, fmt.Sprintf("%s(%s)《%s》", author, year, title))
+	}
+	return out
 }

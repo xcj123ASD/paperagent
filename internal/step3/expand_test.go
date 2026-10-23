@@ -124,6 +124,12 @@ func TestStage_LLMFailure_AddsRiskHint(t *testing.T) {
 		t.Fatal("LLM 失败应产生 RiskHints")
 	}
 	for _, s := range got.Sections {
+		if isLitReviewSection(s.Name) {
+			if strings.TrimSpace(s.Content) == "" {
+				t.Errorf("文献综述类章节 %q 应由骨架兜底，不应为空", s.Name)
+			}
+			continue
+		}
 		if s.Content != "" {
 			t.Errorf("失败时章节 %q 的 Content 应为空", s.Name)
 		}

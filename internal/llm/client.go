@@ -35,6 +35,7 @@ type ExpandSectionRequest struct {
 	Forbidden        []string
 	Mode             model.Mode
 	DesignContext    string
+	References       []string
 }
 
 type Client interface {
@@ -205,6 +206,12 @@ func buildExpandSectionPrompt(req ExpandSectionRequest) string {
 				sb.WriteString("- " + p + "\n")
 			}
 		}
+		if len(req.References) > 0 {
+			sb.WriteString("【可引用文献】（引用时用 作者(年份) 格式，不得虚构）：\n")
+			for _, r := range req.References {
+				sb.WriteString("- " + r + "\n")
+			}
+		}
 		if req.PreviousSummary != "" {
 			sb.WriteString(fmt.Sprintf("前文摘要（避免重复，保持衔接）：%s\n", req.PreviousSummary))
 		}
@@ -242,6 +249,12 @@ func buildExpandSectionPrompt(req ExpandSectionRequest) string {
 		sb.WriteString("本章节需要覆盖的要点：\n")
 		for _, p := range req.KeyPoints {
 			sb.WriteString("- " + p + "\n")
+		}
+	}
+	if len(req.References) > 0 {
+		sb.WriteString("【可引用文献】（引用时用 作者(年份) 格式，不得虚构）：\n")
+		for _, r := range req.References {
+			sb.WriteString("- " + r + "\n")
 		}
 	}
 	if req.PreviousSummary != "" {

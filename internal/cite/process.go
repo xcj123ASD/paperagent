@@ -34,3 +34,17 @@ func ProcessRefs(path string, verify bool, mailto string) (string, error) {
 	f := GBT7714{}
 	return f.Format(refs)
 }
+
+// LoadRefs 仅加载参考文献 JSON，不做 OpenAlex 校验与 GB/T 7714 格式化。
+// 用于把原始 []Reference 结构传给 step3，供文献综述环节引用真实文献。
+func LoadRefs(path string) ([]Reference, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var refs []Reference
+	if err := json.Unmarshal(data, &refs); err != nil {
+		return nil, err
+	}
+	return refs, nil
+}
