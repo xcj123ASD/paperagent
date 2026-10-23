@@ -20,3 +20,4 @@ design.json
 test_*.md
 load.ps1
 *.log
+*.do
