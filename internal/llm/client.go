@@ -365,10 +365,11 @@ func (c *OpenAICompatClient) chat(ctx context.Context, prompt string, maxTokens 
 		"temperature": 0.3,
 		"max_tokens":  maxTokens,
 	}
-	// 智谱思考模型（glm-5.x）：尝试关闭思考模式
-	// 实测该参数对 glm-5.3 不生效，reasoning_tokens 仍会占用 max_tokens
+	// 智谱思考模型（glm-5.x）：新版只接受 low / high / max。
+	// 旧版 disabled 在新版直接返回 400（"该模型始终思考，不支持关闭思考"）。
+	// 用 low 减少 reasoning_tokens 占用，留更多 max_tokens 给 content。
 	if strings.Contains(c.Model, "glm-5") {
-		body["thinking"] = map[string]string{"type": "disabled"}
+		body["thinking"] = map[string]string{"type": "low"}
 	}
 	raw, _ := json.Marshal(body)
 
