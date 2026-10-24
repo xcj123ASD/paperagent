@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"os"
 
 	"paperagent/internal/config"
 	"paperagent/internal/frame"
@@ -22,11 +21,18 @@ type Orchestrator struct {
 	Catalog []model.Journal
 }
 
+// New 构造编排器并注册各阶段。
+//
+// LLM 初始化逻辑：
+//   - 直接调 NewFromEnv，它内部处理 provider 选择：
+//     LLM_PROVIDER=zhipu → 智谱主；否则 DeepSeek 主（有 Key 时）
+//   - 仅当两个 Key 都没设（NewFromEnv 返回 nil）时才回落 MockClient
+//
+// 注意：不要在外层用 os.Getenv("LLM_PROVIDER") 判断——那会导致
+// "没设 LLM_PROVIDER 但设了 Key" 时被拦到 MockClient，用户以为在跑
+// 真实 LLM，实际全是 Mock 输出。
 func New(cfg config.Config, catalog []model.Journal) *Orchestrator {
-	var llmClient llm.Client
-	if os.Getenv("LLM_PROVIDER") != "" {
-		llmClient = llm.NewFromEnv()
-	}
+	llmClient := llm.NewFromEnv()
 	if llmClient == nil {
 		llmClient = llm.MockClient{}
 	}
