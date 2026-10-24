@@ -9,7 +9,13 @@ import (
 )
 
 // RenderSkeleton 从参考文献生成文献综述骨架，永不返回空字符串。
-// 按年份降序分组，每篇一句"作者(年份)研究了《标题》"，每组后附可执行占位。
+//
+// 分层输出：
+//   - 有 Conclusion 或 Abstract 的文献：输出带论述的句子
+//     "X(年份)采用【方法】研究了《标题》，发现【结论】"
+//   - 只有元数据的文献：回落一句"X(年份)研究了《标题》"
+//
+// 每组末尾保留"（此处需补充...）"占位，提示人工补组间关系。
 func RenderSkeleton(refs []cite.Reference) string {
 	if len(refs) == 0 {
 		return "（此处需补充文献综述：请先在 refs.json 中录入参考文献。）"
@@ -40,16 +46,16 @@ func RenderSkeleton(refs []cite.Reference) string {
 	return strings.TrimRight(b.String(), "\n") + "\n"
 }
 
-// formatRef 把单条文献格式化成 "作者(年份)研究了《标题》"。
+// formatRef 把单条文献格式化成带论述的句子。
+//
+// 优先级：
+//  1. 有 Conclusion：输出"X(年份)采用【方法】研究了《标题》，发现【结论】"
+//  2. 只有 Abstract：输出"X(年份)研究了《标题》，摘要指出【摘要】"
+//  3. 只有元数据：输出"X(年份)研究了《标题》"
+//
+// Relation 有值时追加"（与本文关系：X）"。
 func formatRef(r cite.Reference) string {
-	author := "佚名"
-	if len(r.Authors) > 0 {
-		if len(r.Authors) == 1 {
-			author = r.Authors[0]
-		} else {
-			author = r.Authors[0] + "等"
-		}
-	}
+	author := formatAuthors(r.Authors)
 	year := "n.d."
 	if r.Year > 0 {
 		year = fmt.Sprintf("%d", r.Year)
@@ -58,5 +64,36 @@ func formatRef(r cite.Reference) string {
 	if title == "" {
 		title = "（无标题）"
 	}
-	return fmt.Sprintf("%s(%s)研究了《%s》", author, year, title)
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s(%s)", author, year)
+
+	if r.Method != "" {
+		fmt.Fprintf(&b, "采用%s", r.Method)
+	}
+	fmt.Fprintf(&b, "研究了《%s》", title)
+
+	if r.Conclusion != "" {
+		fmt.Fprintf(&b, "，发现%s", strings.TrimRight(r.Conclusion, "。."))
+	} else if r.Abstract != "" {
+		fmt.Fprintf(&b, "，摘要指出%s", strings.TrimRight(r.Abstract, "。."))
+	}
+
+	b.WriteString("。")
+
+	if r.Relation != "" {
+		fmt.Fprintf(&b, "（与本文关系：%s）", r.Relation)
+	}
+	return b.String()
+}
+
+// formatAuthors 格式化作者列表：1 人直写，多人取第一作者 + "等"。
+func formatAuthors(authors []string) string {
+	if len(authors) == 0 {
+		return "佚名"
+	}
+	if len(authors) == 1 {
+		return authors[0]
+	}
+	return authors[0] + "等"
 }
