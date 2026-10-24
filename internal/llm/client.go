@@ -207,7 +207,7 @@ func buildExpandSectionPrompt(req ExpandSectionRequest) string {
 			}
 		}
 		if len(req.References) > 0 {
-			sb.WriteString("【可引用文献】（引用时用 作者(年份) 格式，不得虚构）：\n")
+			sb.WriteString("【可引用文献】（引用时用 作者(年份) 格式，不得虚构。作者姓名必须与下列列表逐字一致，不得拼写错误，如 Brynjolfsson 不能写成 Brynjansson）：\n")
 			for _, r := range req.References {
 				sb.WriteString("- " + r + "\n")
 			}
@@ -226,6 +226,7 @@ func buildExpandSectionPrompt(req ExpandSectionRequest) string {
 		sb.WriteString("2. 体现理论对话：引用既有研究时需指出其贡献与局限，不要简单堆砌；\n")
 		sb.WriteString("3. 不做无据推断，不编造具体数据或虚构文献；但若需引用而缺来源，用占位符标注（如「（此处需补充文献）」），不要返回空内容；\n")
 		sb.WriteString("4. 段落分明，不要出现小标题。\n")
+		sb.WriteString("5. 研究假设必须与本文实证设计严格一致：只推导设计中包含的中介变量与分组维度，不要提出设计中不检验的假设；若设计为分组异质性分析，请用“异质性”表述而非“调节”。\n")
 		if needsData {
 			sb.WriteString("\n本章节属于需要真实数据支撑的类型。即使没有真实数据，也必须写出完整的分析框架，不得返回空内容：\n")
 			sb.WriteString("- 若为研究设计：写出数据来源说明、变量定义（变量名、符号、定义、测度方式）、模型设定（公式或方程形式）、识别策略；\n")
@@ -252,7 +253,7 @@ func buildExpandSectionPrompt(req ExpandSectionRequest) string {
 		}
 	}
 	if len(req.References) > 0 {
-		sb.WriteString("【可引用文献】（引用时用 作者(年份) 格式，不得虚构）：\n")
+		sb.WriteString("【可引用文献】（引用时用 作者(年份) 格式，不得虚构。作者姓名必须与下列列表逐字一致，不得拼写错误）：\n")
 		for _, r := range req.References {
 			sb.WriteString("- " + r + "\n")
 		}
@@ -357,6 +358,8 @@ func (c *OpenAICompatClient) doExpandSection(ctx context.Context, req ExpandSect
 }
 
 func (c *OpenAICompatClient) chat(ctx context.Context, prompt string, maxTokens int) (string, error) {
+	// 不设置 thinking 参数：新版智谱 glm-5.x 强制思考，传任何 thinking 值都返回 400
+	// （"该模型始终思考，不支持关闭思考"）。让它用默认行为。
 	body := map[string]interface{}{
 		"model": c.Model,
 		"messages": []map[string]string{
@@ -364,12 +367,6 @@ func (c *OpenAICompatClient) chat(ctx context.Context, prompt string, maxTokens 
 		},
 		"temperature": 0.3,
 		"max_tokens":  maxTokens,
-	}
-	// 智谱思考模型（glm-5.x）：新版只接受 low / high / max。
-	// 旧版 disabled 在新版直接返回 400（"该模型始终思考，不支持关闭思考"）。
-	// 用 low 减少 reasoning_tokens 占用，留更多 max_tokens 给 content。
-	if strings.Contains(c.Model, "glm-5") {
-		body["thinking"] = map[string]string{"type": "low"}
 	}
 	raw, _ := json.Marshal(body)
 
