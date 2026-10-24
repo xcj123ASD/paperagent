@@ -154,6 +154,8 @@ func (s Stage) Run(ctx *pipeline.Context, input []byte) ([]byte, error) {
 						fmt.Sprintf("章节 %q 用 LLM 带文献润色，%d 字", sec.Name, len([]rune(polished))))
 					continue
 				}
+				f.RiskHints = append(f.RiskHints,
+					fmt.Sprintf("章节 %q LLM 润色失败或过短，已回落骨架，需人工改写", sec.Name))
 				ctx.Logf("step3_expand",
 					fmt.Sprintf("章节 %q LLM 润色失败或过短，回落骨架", sec.Name))
 			}
