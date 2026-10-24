@@ -43,6 +43,18 @@ func (s Stage) designContext() string {
 	return s.Design.ToPromptContext()
 }
 
+// fallbackContent 在 LLM 失败或内容过短时，按章节类型选模板兜底。
+// 返回 (内容, 是否命中模板)。未命中返回 ("", false)，由调用方写占位符。
+func (s Stage) fallbackContent(sec *model.Section) (string, bool) {
+	switch {
+	case s.Design != nil && isIntroSection(sec.Name):
+		return s.Design.RenderIntro(), true
+	case s.Design != nil && isConclusionSection(sec.Name):
+		return s.Design.RenderConclusion(), true
+	}
+	return "", false
+}
+
 func (s Stage) Run(ctx *pipeline.Context, input []byte) ([]byte, error) {
 	ctx.Logf("step3_expand", fmt.Sprintf("收到输入 %d 字节", len(input)))
 
@@ -175,6 +187,12 @@ func (s Stage) Run(ctx *pipeline.Context, input []byte) ([]byte, error) {
 		if err != nil {
 			f.RiskHints = append(f.RiskHints,
 				fmt.Sprintf("章节 %q 正文生成失败：%v", sec.Name, err))
+			// 失败时也尝试模板兜底，避免引言/结论空白
+			if fb, ok := s.fallbackContent(sec); ok {
+				sec.Content = fb
+				ctx.Logf("step3_expand",
+					fmt.Sprintf("章节 %q LLM 失败，用模板兜底，%d 字", sec.Name, len([]rune(fb))))
+			}
 			continue
 		}
 		content = strings.TrimSpace(content)
@@ -192,16 +210,11 @@ func (s Stage) Run(ctx *pipeline.Context, input []byte) ([]byte, error) {
 
 		// 仍然过短：引言/结论走模板兜底，其他节记 RiskHint 写占位符
 		if len([]rune(content)) < 100 {
-			switch {
-			case s.Design != nil && isIntroSection(sec.Name):
-				content = s.Design.RenderIntro()
+			if fb, ok := s.fallbackContent(sec); ok {
+				content = fb
 				ctx.Logf("step3_expand",
-					fmt.Sprintf("章节 %q 用引言模板兜底，%d 字", sec.Name, len([]rune(content))))
-			case s.Design != nil && isConclusionSection(sec.Name):
-				content = s.Design.RenderConclusion()
-				ctx.Logf("step3_expand",
-					fmt.Sprintf("章节 %q 用结论模板兜底，%d 字", sec.Name, len([]rune(content))))
-			default:
+					fmt.Sprintf("章节 %q 内容过短，用模板兜底，%d 字", sec.Name, len([]rune(content))))
+			} else {
 				f.RiskHints = append(f.RiskHints,
 					fmt.Sprintf("章节 %q 生成内容过短（%d 字，预算 %d 字），需人工补充",
 						sec.Name, len([]rune(content)), sec.WordBudget))
@@ -281,7 +294,7 @@ func isLitReviewSection(name string) bool {
 }
 
 // isIntroSection 判断章节名是否为"引言"类章节。
-// LLM 过短时用引言模板兜底。
+// LLM 失败或过短时用引言模板兜底。
 func isIntroSection(name string) bool {
 	for _, kw := range []string{"引言", "绪论", "导论"} {
 		if strings.Contains(name, kw) {
@@ -292,7 +305,7 @@ func isIntroSection(name string) bool {
 }
 
 // isConclusionSection 判断章节名是否为"结论"类章节。
-// LLM 过短时用结论模板兜底。
+// LLM 失败或过短时用结论模板兜底。
 func isConclusionSection(name string) bool {
 	for _, kw := range []string{"结论", "结语"} {
 		if strings.Contains(name, kw) {
