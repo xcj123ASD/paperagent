@@ -18,8 +18,11 @@ func Markdown(f model.Frame, refsText string) string {
 	}
 	for _, sec := range f.Sections {
 		sb.WriteString("## " + sec.Name + "\n\n")
-		if sec.Content != "" {
-			sb.WriteString(sec.Content + "\n\n")
+		content := strings.TrimSpace(sec.Content)
+		content = strings.TrimPrefix(content, "## "+sec.Name)
+		content = strings.TrimSpace(content)
+		if content != "" {
+			sb.WriteString(content + "\n\n")
 		} else {
 			sb.WriteString("*（本节未生成）*\n\n")
 		}
