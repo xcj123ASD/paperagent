@@ -351,8 +351,8 @@ func (c *OpenAICompatClient) doExpandSection(ctx context.Context, req ExpandSect
 	if maxTokens < 2048 {
 		maxTokens = 2048
 	}
-	if maxTokens > 16384 {
-		maxTokens = 16384
+	if maxTokens > 32768 {
+		maxTokens = 32768
 	}
 	return c.chat(ctx, buildExpandSectionPrompt(req), maxTokens)
 }

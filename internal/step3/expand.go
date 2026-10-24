@@ -181,6 +181,7 @@ func (s Stage) Run(ctx *pipeline.Context, input []byte) ([]byte, error) {
 			Forbidden:        sec.Forbidden,
 			Mode:             mode,
 			DesignContext:    s.designContext(),
+			References:       formatRefsForPrompt(s.Refs),
 		}
 
 		content, err := s.callLLM(req)

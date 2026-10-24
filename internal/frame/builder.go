@@ -260,22 +260,23 @@ func forbiddenOf(name string) []string {
 // chapterWeight 返回章节的相对权重，用于非均匀分配字数。
 //
 // 论文实际写作中各章节字数需求差异大：
-//   - 文献综述需要大量引用空间（35–50 篇文献要铺开论述）
+//   - 文献综述需要大量引用空间（50–60 篇文献要铺开论述）
 //   - 实证结果需要表格空间（多列回归表占大量行）
 //   - 研究设计次之（变量表、模型说明）
-//   - 引言/结论相对紧凑
+//   - 引言/结论需要足够篇幅写背景、贡献与政策启示
 //
-// 权重基准 1.0，综述 2.0，实证 1.5，研究设计 1.2。
+// 权重基准 1.3，综述 3.5，实证 1.8，研究设计 1.2。
+// 总权重 9.1，10000 字总量下综述约 3846 字（50 篇约 77 字/篇），引言/结论各约 1429 字。
 func chapterWeight(name string) float64 {
 	switch {
 	case strings.Contains(name, "文献综述") || strings.Contains(name, "文献回顾"):
-		return 2.0
+		return 3.5
 	case strings.Contains(name, "实证结果") || strings.Contains(name, "实证分析"):
-		return 1.5
+		return 1.8
 	case strings.Contains(name, "研究设计"):
 		return 1.2
 	default:
-		return 1.0
+		return 1.3
 	}
 }
 
