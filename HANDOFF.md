@@ -15,7 +15,7 @@
 - 工程修复 7 项 ✅（2026-10-22，commit 26e57c0 及之前）
 
 ## 当前配置
-- LLM_PROVIDER=zhipu（默认），DeepSeek 备用
+- LLM_PROVIDER：默认 DeepSeek 主，智谱备用（设 LLM_PROVIDER=zhipu 才切智谱主）
 - temperature: 0.3（关键，不要调高）
 - 本地验证：`. .\load.ps1` 后跑 `.\scripts\ci.ps1` → ALL PASSED
 
@@ -93,6 +93,8 @@ go run .\cmd\paper --topic "数字化转型对制造业企业创新绩效的影�
 2. 智谱比 DeepSeek 更配合中文实证论文写作：同温度下 0 节 vs 1 节
 3. 默认 provider 已从 deepseek 改为 zhipu（LLM_PROVIDER=deepseek 才用 DeepSeek 主）
 4. env.ps1 的 LLM_PROVIDER 也改为 zhipu
+> **注（后续修正）**：第 3、4 条为 2026-10-20 当日判断。后续实测发现智谱 glm-5.3 为思考模型，`reasoning_tokens` 会吃掉约 80% `max_tokens`，content 极短，不适合做主模型。**已切回 DeepSeek 主、智谱备用**（`LLM_PROVIDER=zhipu` 才切主）。详见第二十二节"已知边界"。
+
 
 ### 对之前"M3.1 结论"的修正
 之前记录"prompt 层已到极限"不准确——真正的瓶颈是 temperature 配置错误。
