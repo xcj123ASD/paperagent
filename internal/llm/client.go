@@ -113,6 +113,9 @@ func NewOpenAICompat(baseURL, apiKey, model string) *OpenAICompatClient {
 }
 
 func NewFromEnv() Client {
+	if os.Getenv("LLM_PROVIDER") == "mock" {
+		return MockClient{}
+	}
 	zhipuKey := os.Getenv("ZAI_API_KEY")
 	if zhipuKey == "" {
 		zhipuKey = os.Getenv("ZHIPU_API_KEY")

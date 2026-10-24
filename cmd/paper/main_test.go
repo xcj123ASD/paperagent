@@ -47,7 +47,7 @@ const minimalRefs = `[
 ]`
 
 func TestRun_Minimal(t *testing.T) {
-	t.Setenv("LLM_PROVIDER", "")
+	t.Setenv("LLM_PROVIDER", "mock")
 	out := filepath.Join(t.TempDir(), "draft.md")
 
 	err := run([]string{
@@ -77,7 +77,7 @@ func TestRun_Minimal(t *testing.T) {
 }
 
 func TestRun_WithDesign(t *testing.T) {
-	t.Setenv("LLM_PROVIDER", "")
+	t.Setenv("LLM_PROVIDER", "mock")
 	designPath := writeTemp(t, "design.json", minimalDesign)
 	out := filepath.Join(t.TempDir(), "draft.md")
 
@@ -107,7 +107,7 @@ func TestRun_WithDesign(t *testing.T) {
 }
 
 func TestRun_WithRefs(t *testing.T) {
-	t.Setenv("LLM_PROVIDER", "")
+	t.Setenv("LLM_PROVIDER", "mock")
 	refsPath := writeTemp(t, "refs.json", minimalRefs)
 	out := filepath.Join(t.TempDir(), "draft.md")
 
@@ -136,7 +136,7 @@ func TestRun_WithRefs(t *testing.T) {
 }
 
 func TestRun_InvalidMode(t *testing.T) {
-	t.Setenv("LLM_PROVIDER", "")
+	t.Setenv("LLM_PROVIDER", "mock")
 	out := filepath.Join(t.TempDir(), "draft.md")
 
 	err := run([]string{
@@ -153,7 +153,7 @@ func TestRun_InvalidMode(t *testing.T) {
 }
 
 func TestRun_DesignNotFound(t *testing.T) {
-	t.Setenv("LLM_PROVIDER", "")
+	t.Setenv("LLM_PROVIDER", "mock")
 	out := filepath.Join(t.TempDir(), "draft.md")
 
 	err := run([]string{

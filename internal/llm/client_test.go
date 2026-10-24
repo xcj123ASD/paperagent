@@ -156,6 +156,7 @@ func TestMockClient_ExpandSection_RoughlyMatchesBudget(t *testing.T) {
 // --- NewFromEnv ---
 
 func TestNewFromEnv_NoKeys_ReturnsNil(t *testing.T) {
+	t.Setenv("LLM_PROVIDER", "")
 	t.Setenv("ZAI_API_KEY", "")
 	t.Setenv("DEEPSEEK_API_KEY", "")
 	if c := NewFromEnv(); c != nil {
@@ -164,6 +165,7 @@ func TestNewFromEnv_NoKeys_ReturnsNil(t *testing.T) {
 }
 
 func TestNewFromEnv_OnlyQwen(t *testing.T) {
+	t.Setenv("LLM_PROVIDER", "")
 	t.Setenv("ZAI_API_KEY", "qwen-key")
 	t.Setenv("DEEPSEEK_API_KEY", "")
 	c := NewFromEnv()
@@ -177,6 +179,7 @@ func TestNewFromEnv_OnlyQwen(t *testing.T) {
 }
 
 func TestNewFromEnv_OnlyDeepSeek(t *testing.T) {
+	t.Setenv("LLM_PROVIDER", "")
 	t.Setenv("ZAI_API_KEY", "")
 	t.Setenv("DEEPSEEK_API_KEY", "ds-key")
 	c := NewFromEnv()
