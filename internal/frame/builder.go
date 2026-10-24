@@ -129,11 +129,28 @@ func (b *Builder) BuildWithType(topic, targetJournal, column string, totalWords 
 	if totalWords < n {
 		return f, fmt.Errorf("总字数 %d 小于章节数 %d，无法分配", totalWords, n)
 	}
-	base := totalWords / n
+
+	// 按章节权重分配字数，而非平均分配。
+	// 综述需要大量引用空间（35–50 篇文献），实证需要表格空间，引言/结论相对紧凑。
+	weights := make([]float64, n)
+	var totalWeight float64
 	for i, name := range structure {
-		w := base
+		weights[i] = chapterWeight(name)
+		totalWeight += weights[i]
+	}
+
+	allocated := 0
+	for i, name := range structure {
+		var w int
 		if i == n-1 {
-			w = totalWords - base*(n-1)
+			// 最后一章吸收余数，保证总和 == totalWords
+			w = totalWords - allocated
+		} else {
+			w = int(float64(totalWords) * weights[i] / totalWeight)
+			allocated += w
+		}
+		if w < 1 {
+			w = 1
 		}
 		f.Sections = append(f.Sections, model.Section{
 			Name: name, Role: roleOf(name), KeyPoints: []string{},
@@ -238,6 +255,28 @@ func forbiddenOf(name string) []string {
 		return []string{"新的变量定义", "新的文献引用"}
 	}
 	return []string{}
+}
+
+// chapterWeight 返回章节的相对权重，用于非均匀分配字数。
+//
+// 论文实际写作中各章节字数需求差异大：
+//   - 文献综述需要大量引用空间（35–50 篇文献要铺开论述）
+//   - 实证结果需要表格空间（多列回归表占大量行）
+//   - 研究设计次之（变量表、模型说明）
+//   - 引言/结论相对紧凑
+//
+// 权重基准 1.0，综述 2.0，实证 1.5，研究设计 1.2。
+func chapterWeight(name string) float64 {
+	switch {
+	case strings.Contains(name, "文献综述") || strings.Contains(name, "文献回顾"):
+		return 2.0
+	case strings.Contains(name, "实证结果") || strings.Contains(name, "实证分析"):
+		return 1.5
+	case strings.Contains(name, "研究设计"):
+		return 1.2
+	default:
+		return 1.0
+	}
 }
 
 // Stage 包装，供流水线调用
