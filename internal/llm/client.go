@@ -134,7 +134,7 @@ func NewFromEnv() Client {
 		deepseek = NewOpenAICompat(
 			"https://api.deepseek.com",
 			dsKey,
-			"deepseek-flash",
+			"deepseek-chat",
 		)
 	}
 

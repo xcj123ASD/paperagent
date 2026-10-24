@@ -187,8 +187,8 @@ func TestNewFromEnv_OnlyDeepSeek(t *testing.T) {
 	if !ok {
 		t.Fatalf("只设 deepseek 应返回 *OpenAICompatClient，实际 %T", c)
 	}
-	if oc.Model != "deepseek-flash" {
-		t.Errorf("model 应为 deepseek-flash，实际 %s", oc.Model)
+	if oc.Model != "deepseek-chat" {
+		t.Errorf("model 应为 deepseek-chat，实际 %s", oc.Model)
 	}
 }
 
@@ -206,8 +206,8 @@ func TestNewFromEnv_Both_QwenPrimary(t *testing.T) {
 	if p.Model != "glm-5.3" {
 		t.Errorf("Primary 应为 glm-5.3，实际 %s", p.Model)
 	}
-	if b.Model != "deepseek-flash" {
-		t.Errorf("Backup 应为 deepseek-flash，实际 %s", b.Model)
+	if b.Model != "deepseek-chat" {
+		t.Errorf("Backup 应为 deepseek-chat，实际 %s", b.Model)
 	}
 }
 
@@ -222,8 +222,8 @@ func TestNewFromEnv_Both_DeepSeekPrimary(t *testing.T) {
 	}
 	p := fc.Primary.(*OpenAICompatClient)
 	b := fc.Backup.(*OpenAICompatClient)
-	if p.Model != "deepseek-flash" {
-		t.Errorf("Primary 应为 deepseek-flash，实际 %s", p.Model)
+	if p.Model != "deepseek-chat" {
+		t.Errorf("Primary 应为 deepseek-chat，实际 %s", p.Model)
 	}
 	if b.Model != "glm-5.3" {
 		t.Errorf("Backup 应为 glm-5.3，实际 %s", b.Model)
