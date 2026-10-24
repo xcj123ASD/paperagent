@@ -212,7 +212,10 @@ func (s Stage) Run(ctx *pipeline.Context, input []byte) ([]byte, error) {
 		// 仍然过短：引言/结论走模板兜底，其他节记 RiskHint 写占位符
 		if len([]rune(content)) < 100 {
 			if fb, ok := s.fallbackContent(sec); ok {
+				origLen := len([]rune(content))
 				content = fb
+				f.RiskHints = append(f.RiskHints,
+					fmt.Sprintf("章节 %q LLM 生成内容过短（%d 字），已用模板兜底，需人工改写", sec.Name, origLen))
 				ctx.Logf("step3_expand",
 					fmt.Sprintf("章节 %q 内容过短，用模板兜底，%d 字", sec.Name, len([]rune(content))))
 			} else {
