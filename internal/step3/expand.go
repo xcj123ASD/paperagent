@@ -149,6 +149,15 @@ func (s Stage) Run(ctx *pipeline.Context, input []byte) ([]byte, error) {
 				polished, err := s.callLLM(req)
 				polished = strings.TrimSpace(polished)
 				if err == nil && len([]rune(polished)) >= 200 {
+					// 超预算 1.25 倍截断
+					if sec.WordBudget > 0 && len([]rune(polished)) > sec.WordBudget*5/4 {
+						origLen := len([]rune(polished))
+						limit := sec.WordBudget * 5 / 4
+						polished = truncateAtSentence(polished, limit)
+						f.RiskHints = append(f.RiskHints,
+							fmt.Sprintf("章节 %q 超预算（原 %d 字 → 截断至 %d 字，丢弃 %d 字），需人工补",
+								sec.Name, origLen, len([]rune(polished)), origLen-len([]rune(polished))))
+					}
 					sec.Content = polished
 					ctx.Logf("step3_expand",
 						fmt.Sprintf("章节 %q 用 LLM 带文献润色，%d 字", sec.Name, len([]rune(polished))))
@@ -240,10 +249,12 @@ func (s Stage) Run(ctx *pipeline.Context, input []byte) ([]byte, error) {
 
 		// 超预算 1.25 倍截断，防止 LLM 无视字数约束
 		if sec.WordBudget > 0 && len([]rune(content)) > sec.WordBudget*5/4 {
+			origLen := len([]rune(content))
 			limit := sec.WordBudget * 5 / 4
 			content = truncateAtSentence(content, limit)
 			f.RiskHints = append(f.RiskHints,
-				fmt.Sprintf("章节 %q 超预算已截断至 %d 字，需人工补", sec.Name, len([]rune(content))))
+				fmt.Sprintf("章节 %q 超预算（原 %d 字 → 截断至 %d 字，丢弃 %d 字），需人工补",
+					sec.Name, origLen, len([]rune(content)), origLen-len([]rune(content))))
 		}
 
 		sec.Content = content
