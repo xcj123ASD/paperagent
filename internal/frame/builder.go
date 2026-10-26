@@ -265,8 +265,8 @@ func forbiddenOf(name string) []string {
 //   - 研究设计次之（变量表、模型说明）
 //   - 引言/结论需要足够篇幅写背景、贡献与政策启示
 //
-// 权重基准 1.3，综述 3.5，实证 1.8，研究设计 1.2。
-// 总权重 9.1，10000 字总量下综述约 3846 字（50 篇约 77 字/篇），引言/结论各约 1429 字。
+// 权重基准 1.8，综述 3.5，实证 1.8，研究设计 1.2。
+// 总权重 10.1，10000 字总量下综述约 3465 字，引言/结论各约 1782 字。
 func chapterWeight(name string) float64 {
 	switch {
 	case strings.Contains(name, "文献综述") || strings.Contains(name, "文献回顾"):
@@ -276,7 +276,7 @@ func chapterWeight(name string) float64 {
 	case strings.Contains(name, "研究设计"):
 		return 1.2
 	default:
-		return 1.3
+		return 1.8
 	}
 }
 

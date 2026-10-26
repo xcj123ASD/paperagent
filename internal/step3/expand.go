@@ -238,6 +238,14 @@ func (s Stage) Run(ctx *pipeline.Context, input []byte) ([]byte, error) {
 			}
 		}
 
+		// 超预算 1.25 倍截断，防止 LLM 无视字数约束
+		if sec.WordBudget > 0 && len([]rune(content)) > sec.WordBudget*5/4 {
+			limit := sec.WordBudget * 5 / 4
+			content = truncateAtSentence(content, limit)
+			f.RiskHints = append(f.RiskHints,
+				fmt.Sprintf("章节 %q 超预算已截断至 %d 字，需人工补", sec.Name, len([]rune(content))))
+		}
+
 		sec.Content = content
 		ctx.Logf("step3_expand",
 			fmt.Sprintf("章节 %q 完成，%d 字（预算 %d）", sec.Name, len([]rune(sec.Content)), sec.WordBudget))
@@ -346,4 +354,19 @@ func formatRefsForPrompt(refs []cite.Reference) []string {
 		out = append(out, fmt.Sprintf("%s(%s)《%s》", author, year, title))
 	}
 	return out
+}
+
+// truncateAtSentence 在 limit 字内找最后一个句末标点截断，避免砍断句子。
+func truncateAtSentence(s string, limit int) string {
+	runes := []rune(s)
+	if len(runes) <= limit {
+		return s
+	}
+	for i := limit - 1; i >= 0; i-- {
+		switch runes[i] {
+		case '。', '！', '？', '.', '!', '?':
+			return string(runes[:i+1])
+		}
+	}
+	return string(runes[:limit])
 }

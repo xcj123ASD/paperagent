@@ -198,7 +198,7 @@ func buildExpandSectionPrompt(req ExpandSectionRequest) string {
 	needsData := needsDataSection(req.Section)
 
 	if req.Mode == model.ModeJournal {
-		sb.WriteString(fmt.Sprintf("你是一位学术期刊论文写作助手。请为以下章节撰写学术正文，约 %d 字。\n", req.WordBudget))
+		sb.WriteString(fmt.Sprintf("你是一位学术期刊论文写作助手。请为以下章节撰写学术正文，严格不超过 %d 字，超出部分会被系统截断。\n", req.WordBudget))
 		sb.WriteString(fmt.Sprintf("论文主题：%s\n", req.Topic))
 		sb.WriteString(fmt.Sprintf("章节：%s\n", req.Section))
 		sb.WriteString(fmt.Sprintf("章节作用：%s\n", req.Role))
@@ -244,7 +244,7 @@ func buildExpandSectionPrompt(req ExpandSectionRequest) string {
 		return sb.String()
 	}
 
-	sb.WriteString(fmt.Sprintf("你是一位学术论文写作助手。请为以下章节撰写正文，约 %d 字。\n", req.WordBudget))
+	sb.WriteString(fmt.Sprintf("你是一位学术论文写作助手。请为以下章节撰写正文，严格不超过 %d 字，超出部分会被系统截断。\n", req.WordBudget))
 	sb.WriteString(fmt.Sprintf("论文主题：%s\n", req.Topic))
 	sb.WriteString(fmt.Sprintf("章节：%s\n", req.Section))
 	sb.WriteString(fmt.Sprintf("章节作用：%s\n", req.Role))
