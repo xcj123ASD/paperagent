@@ -21,3 +21,5 @@ test_*.md
 load.ps1
 *.log
 *.do
+runs/
+stats*.csv
