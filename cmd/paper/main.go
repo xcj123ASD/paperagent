@@ -132,7 +132,14 @@ func run(args []string) error {
 	}
 	fmt.Printf("written: %s\n", *outputFlag)
 
-	quality.Check(md, cfg.Refs).Print()
+	report := quality.Check(md, cfg.Refs)
+	report.Print()
+	if report.AllPass() {
+		fmt.Println("QUALITY_STATUS=PASS")
+	} else {
+		fmt.Println("QUALITY_STATUS=FAIL")
+	}
+	fmt.Printf("QUALITY_PLACEHOLDERS=%d\n", report.PlaceholderCount)
 
 	if *exportFlag == "" {
 		return nil

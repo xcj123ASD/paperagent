@@ -125,3 +125,48 @@ func TestAllPass_占位符不阻塞(t *testing.T) {
 		t.Fatal("占位符不应阻塞 AllPass")
 	}
 }
+
+func TestCheckCitations_拼写变形_判WARN(t *testing.T) {
+	md := "Brynjansson(2000)指出。\n## 参考文献\n"
+	refs := []cite.Reference{{Authors: []string{"Brynjolfsson E"}, Year: 2000}}
+	ok, issues, warns := CheckCitations(md, refs)
+	if !ok {
+		t.Fatalf("拼写变形应判 WARN 不判 FAIL，实际问题：%v", issues)
+	}
+	if len(warns) == 0 {
+		t.Fatal("应产生 WARN")
+	}
+}
+
+func TestCheckCitations_中文单姓_判WARN(t *testing.T) {
+	md := "刘等(2023)发现。\n## 参考文献\n"
+	refs := []cite.Reference{{Authors: []string{"Liu M"}, Year: 2023}}
+	ok, issues, warns := CheckCitations(md, refs)
+	if !ok {
+		t.Fatalf("中文单姓缩写应判 WARN，实际问题：%v", issues)
+	}
+	if len(warns) == 0 {
+		t.Fatal("应产生 WARN")
+	}
+}
+
+func TestCheckCitations_英文全名缩写_通过(t *testing.T) {
+	md := "Teece D J(1997)指出。\n## 参考文献\n"
+	refs := []cite.Reference{{Authors: []string{"Teece D J"}, Year: 1997}}
+	ok, issues, _ := CheckCitations(md, refs)
+	if !ok {
+		t.Fatalf("英文全名缩写应匹配，问题：%v", issues)
+	}
+}
+
+func TestCheckCitations_多作者全名缩写_通过(t *testing.T) {
+	md := "Teece D J(1997)和Cohen W M(1990)均指出。\n## 参考文献\n"
+	refs := []cite.Reference{
+		{Authors: []string{"Teece D J"}, Year: 1997},
+		{Authors: []string{"Cohen W M"}, Year: 1990},
+	}
+	ok, issues, _ := CheckCitations(md, refs)
+	if !ok {
+		t.Fatalf("多作者全名缩写应全匹配，问题：%v", issues)
+	}
+}
