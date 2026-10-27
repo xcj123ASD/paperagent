@@ -15,6 +15,7 @@ import (
 	"paperagent/internal/flow"
 	"paperagent/internal/model"
 	"paperagent/internal/pipeline"
+	"paperagent/internal/quality"
 	"paperagent/internal/render"
 )
 
@@ -130,6 +131,8 @@ func run(args []string) error {
 		return fmt.Errorf("write output failed: %w", err)
 	}
 	fmt.Printf("written: %s\n", *outputFlag)
+
+	quality.Check(md, cfg.Refs).Print()
 
 	if *exportFlag == "" {
 		return nil
