@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -219,6 +220,143 @@ func reportUsage(client llm.Client, mode string, elapsed time.Duration) int64 {
 	return total
 }
 
+// historyDir 返回 ~/.paperagent/history/ 目录路径，不存在则创建。
+func historyDir() (string, error) {
+	dir, err := paperagentDir()
+	if err != nil {
+		return "", err
+	}
+	h := filepath.Join(dir, "history")
+	_ = os.MkdirAll(h, 0755)
+	return h, nil
+}
+
+// historyEntry 单次运行的元数据。
+type historyEntry struct {
+	Time         string `json:"time"`
+	Topic        string `json:"topic"`
+	Mode         string `json:"mode"`
+	OutputFile   string `json:"output_file"`
+	Tokens       int64  `json:"tokens"`
+	Quality      string `json:"quality"`
+	Placeholders int    `json:"placeholders"`
+}
+
+// saveHistory 保存本次运行到 history 目录，保留最近 20 次。
+func saveHistory(topic, mode, quality string, placeholders int, tokens int64, mdContent string) {
+	hdir, err := historyDir()
+	if err != nil {
+		return
+	}
+	ts := time.Now().Format("20060102-150405")
+	entryDir := filepath.Join(hdir, ts)
+	if err := os.MkdirAll(entryDir, 0755); err != nil {
+		return
+	}
+	_ = os.WriteFile(filepath.Join(entryDir, "draft.md"), []byte(mdContent), 0644)
+	meta := historyEntry{
+		Time:         time.Now().Format(time.RFC3339),
+		Topic:        topic,
+		Mode:         mode,
+		OutputFile:   "draft.md",
+		Tokens:       tokens,
+		Quality:      quality,
+		Placeholders: placeholders,
+	}
+	metaJSON, _ := json.MarshalIndent(meta, "", "  ")
+	_ = os.WriteFile(filepath.Join(entryDir, "meta.json"), metaJSON, 0644)
+	pruneHistory(hdir, 20)
+}
+
+// pruneHistory 保留最近 n 个历史目录，删更旧的。
+func pruneHistory(hdir string, n int) {
+	entries, err := os.ReadDir(hdir)
+	if err != nil || len(entries) <= n {
+		return
+	}
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if e.IsDir() {
+			names = append(names, e.Name())
+		}
+	}
+	sort.Strings(names)
+	for i := 0; i < len(names)-n; i++ {
+		_ = os.RemoveAll(filepath.Join(hdir, names[i]))
+	}
+}
+
+// listHistory 打印最近 10 次历史记录。
+func listHistory() error {
+	hdir, err := historyDir()
+	if err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(hdir)
+	if err != nil {
+		fmt.Println("无历史记录")
+		return nil
+	}
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if e.IsDir() {
+			names = append(names, e.Name())
+		}
+	}
+	if len(names) == 0 {
+		fmt.Println("无历史记录")
+		return nil
+	}
+	sort.Strings(names)
+	if len(names) > 10 {
+		names = names[len(names)-10:]
+	}
+	fmt.Printf("最近 %d 次运行（#1=最近）：\n", len(names))
+	for i := len(names) - 1; i >= 0; i-- {
+		dir := filepath.Join(hdir, names[i])
+		metaData, _ := os.ReadFile(filepath.Join(dir, "meta.json"))
+		var m historyEntry
+		_ = json.Unmarshal(metaData, &m)
+		fmt.Printf("  #%-2d %s  mode=%s  topic=%s  tokens=%d  quality=%s  placeholders=%d\n",
+			len(names)-i, m.Time, m.Mode, m.Topic, m.Tokens, m.Quality, m.Placeholders)
+	}
+	return nil
+}
+
+// showHistory 把第 n 次历史记录（1=最近）的 draft 复制到当前目录。
+func showHistory(n int) error {
+	hdir, err := historyDir()
+	if err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(hdir)
+	if err != nil {
+		return fmt.Errorf("无历史记录")
+	}
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if e.IsDir() {
+			names = append(names, e.Name())
+		}
+	}
+	if n < 1 || n > len(names) {
+		return fmt.Errorf("序号 %d 超出范围（1-%d）", n, len(names))
+	}
+	sort.Strings(names)
+	dir := filepath.Join(hdir, names[len(names)-n])
+	src := filepath.Join(dir, "draft.md")
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return fmt.Errorf("读取历史 draft 失败: %w", err)
+	}
+	out := fmt.Sprintf("draft_history_%d.md", n)
+	if err := os.WriteFile(out, data, 0644); err != nil {
+		return fmt.Errorf("写出失败: %w", err)
+	}
+	fmt.Printf("已复制到: %s\n", out)
+	return nil
+}
+
 func run(args []string) error {
 	fs := flag.NewFlagSet("paper", flag.ContinueOnError)
 
@@ -236,6 +374,8 @@ func run(args []string) error {
 	maxPerRunFlag := fs.Int64("max-tokens-per-run", 0, "单次运行 token 上限，0 表示不限（超限保留结果但打印警告）")
 	maxPerDayFlag := fs.Int64("max-tokens-per-day", 0, "单日累计 token 上限，0 表示不限（超限直接拒绝运行）")
 	noEstimateFlag := fs.Bool("no-estimate", false, "跳过跑前成本预估打印")
+	historyFlag := fs.Bool("history", false, "列出最近 10 次历史运行记录")
+	historyShowFlag := fs.Int("history-show", 0, "把第 N 次历史记录（1=最近）的 draft 复制到当前目录")
 
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -263,6 +403,14 @@ func run(args []string) error {
 		fmt.Printf("pandoc 已安装：%s\n", bin)
 		fmt.Println("后续导出无需再手动配置 PANDOC_PATH。")
 		return nil
+	}
+
+	// D3：独立子命令 --history 和 --history-show
+	if *historyFlag {
+		return listHistory()
+	}
+	if *historyShowFlag > 0 {
+		return showHistory(*historyShowFlag)
 	}
 
 	// B3：首次运行引导。只在真实 LLM 模式下提示，Mock 测试不打印。
@@ -407,7 +555,9 @@ func run(args []string) error {
 
 	report := quality.Check(md, cfg.Refs)
 	report.Print()
+	qualityStr := "FAIL"
 	if report.AllPass() {
+		qualityStr = "PASS"
 		fmt.Println("QUALITY_STATUS=PASS")
 	} else {
 		fmt.Println("QUALITY_STATUS=FAIL")
@@ -422,6 +572,9 @@ func run(args []string) error {
 		fmt.Fprintf(os.Stderr, "警告：本次 token 用量 %d 超过单次上限 %d，已保留结果但建议检查 prompt 是否过长\n", total, cfg.MaxTokensPerRun)
 		fmt.Println("TOKENS_OVER_LIMIT=1")
 	}
+
+	// D3：保存历史记录（保留最近 20 次）
+	saveHistory(frame.Title, string(cfg.Mode), qualityStr, report.PlaceholderCount, total, md)
 
 	if *exportFlag == "" {
 		return nil
