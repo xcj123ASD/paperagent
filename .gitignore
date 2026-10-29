@@ -24,3 +24,5 @@ load.ps1
 runs/
 stats*.csv
 *.progress.json
+draft_history_*.md
+draft_web_*.md
