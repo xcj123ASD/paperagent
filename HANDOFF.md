@@ -188,3 +188,15 @@ cmd/paper/main.go        # 主入口
 - 已知问题：DeepSeek Key 失效时 FallbackClient 静默切智谱 glm-5.3，推理模型返回空，用户看到「生成内容过短」。errhint 已提示「可能被切到智谱」，根治需 FallbackClient 记切换日志（后续任务）
 - 工具铁律：改 .go 用 VSCode（code .\文件），不用 notepad 整文件粘贴，notepad 会吃 `})` 换行和 `""` 引号
 - 下一项：D4 README_USER.md（1 天）
+
+### D3 历史记录（2026-10-29 完成）
+- 每次跑完存 `~/.paperagent/history/<YYYYMMDD-HHMMSS>/`，含 `draft.md` + `meta.json`（时间、主题、模式、token、质量、占位符数）
+- 保留最近 20 次，超出自动删最旧（`pruneHistory`）
+- 两个子命令：`--history` 列最近 10 次，`--history-show N` 把第 N 次 draft 复制为 `draft_history_N.md`
+- 新增 6 函数：historyDir/historyEntry/saveHistory/pruneHistory/listHistory/showHistory
+- 实测：Mock 模式跑 2 次，`--history` 显示 2 条，`--history-show 1` 复制成功
+
+### 累计进度
+- A 5/5 ✅ / B 5/5 ✅ / C 3/3 ✅ / D 3/7（D2/D3/D4）
+- 累计 16/62 天 ≈ 26%
+- D 组剩余：D1 本地 Web（3 天）、D5 FAQ（1 天）
