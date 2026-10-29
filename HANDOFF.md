@@ -244,3 +244,17 @@ cmd/paper/main.go        # 主入口
 ### 累计进度（2026-10-29）
 - A 5/5 ✅ / B 5/5 ✅ / C 3/3 ✅ / D 7/7 ✅ / F 4/5（F1–F4 完成，待 F5 免责声明、F6 数据留存）
 - 累计约 23/62 天 ≈ 37%
+### F5 免责声明（2026-10-29 完成）
+- 新增 `DISCLAIMER.md`：产出性质、人工核验义务、数据外发、责任限制、撤回方式
+- 新增 `internal/notice` 包：`ShowOnce(markerName, lines)` 通用首启提示，C3 与 F5 共用
+- `cmd/paper/main.go`：`printDataNotice` 改调 `notice.ShowOnce`；新增 `printDisclaimer`；`run()` 里 `fs.Parse` 后调用（Mock 跳过）
+- `cmd/web/main.go`：`main()` 里 `flag.Parse` 后调 `notice.ShowOnce(".disclaimer_shown", ...)`
+- `README_USER.md`：开头补「使用前必读」段，链到 DISCLAIMER.md
+- 标记文件：`~/.paperagent/.disclaimer_shown`
+- 验证：`go run .\cmd\paper --history` 首跑打印 8 行声明，标记生成；二跑不再出现
+- commit：5ca8a9a（ahead 6，push 网络失败待推）
+- 下一步：F6 数据留存
+
+### 累计进度（2026-10-29 晚）
+- A 5/5 ✅ / B 5/5 ✅ / C 3/3 ✅ / D 7/7 ✅ / F 5/6（F1–F5 完成，待 F6 数据留存）
+- 累计约 23.5/62 天 ≈ 38%
