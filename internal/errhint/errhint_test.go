@@ -49,7 +49,6 @@ func TestExplain_HTTP500(t *testing.T) {
 }
 
 func TestExplain_HTTPWrapped(t *testing.T) {
-	// 验证 %w 包装链能被 errors.As 穿透
 	base := &llm.HTTPError{StatusCode: 402, Body: "insufficient"}
 	wrapped := fmt.Errorf("step3 failed: %w", base)
 	hint := Explain(wrapped)
@@ -86,5 +85,29 @@ func TestExplain_Unknown(t *testing.T) {
 	hint := Explain(err)
 	if hint != "" {
 		t.Errorf("未知错误应返回空，实际: %q", hint)
+	}
+}
+
+func TestExplain_ContentTooShort_Zero(t *testing.T) {
+	err := errors.New("章节 \"引言\" 生成内容过短（0 字，预算 1782 字），需人工补充")
+	hint := Explain(err)
+	if !strings.Contains(hint, "空内容") {
+		t.Errorf("0 字应提示空内容，实际: %s", hint)
+	}
+}
+
+func TestExplain_ContentTooShort_NonZero(t *testing.T) {
+	err := errors.New("章节 \"引言\" 生成内容过短（50 字，预算 1782 字），需人工补充")
+	hint := Explain(err)
+	if !strings.Contains(hint, "过短") {
+		t.Errorf("非 0 字应提示过短，实际: %s", hint)
+	}
+}
+
+func TestExplain_PolishFailed(t *testing.T) {
+	err := errors.New("章节 \"文献综述\" LLM 润色失败或过短，已回落骨架")
+	hint := Explain(err)
+	if !strings.Contains(hint, "润色失败") {
+		t.Errorf("应提示润色失败，实际: %s", hint)
 	}
 }

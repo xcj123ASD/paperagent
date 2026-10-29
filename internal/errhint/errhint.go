@@ -39,6 +39,13 @@ func Explain(err error) string {
 		return "导出失败：PANDOC_PATH 指向的文件不存在。检查 setx PANDOC_PATH 路径是否正确。"
 	case strings.Contains(msg, "invalid --mode"):
 		return "参数错误：--mode 只能是 thesis 或 journal。"
+	case strings.Contains(msg, "生成内容过短"):
+		if strings.Contains(msg, "（0 字") || strings.Contains(msg, "(0 字") {
+			return "LLM 返回空内容。检查：1) Key 是否有效（echo $env:DEEPSEEK_API_KEY 应输出 35 位）；2) DeepSeek 是否欠费（HTTP 402）；3) 是否被 FallbackClient 切到智谱 glm-5.3（推理模型易返回空），可临时 unset ZAI_API_KEY 强制走 DeepSeek。"
+		}
+		return "LLM 返回内容过短。可能原因：prompt 太长导致模型截断。减少 --refs 数量，或缩短 design.json 描述后重试。"
+	case strings.Contains(msg, "LLM 润色失败或过短"):
+		return "LLM 润色失败或返回过短。检查 Key、网络、账户余额；若用智谱 glm-5.3，考虑切回 DeepSeek：unset ZAI_API_KEY。"
 	case strings.Contains(msg, "token 用量已达上限"):
 		return "成本配额：今日 token 用量已达 --max-tokens-per-day 上限。明日再跑，或提高上限（0 表示不限）。"
 	case strings.Contains(msg, "load design failed"):
