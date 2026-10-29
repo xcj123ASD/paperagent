@@ -1,4 +1,4 @@
-﻿# paperagent FAQ
+# paperagent FAQ
 
 README_USER.md 覆盖入门和常见错误。本文件补充工作流、文献库构建、质量检测解读、常见误解。
 
@@ -185,6 +185,14 @@ DeepSeek 定价：input 1 元/百万 token，output 2 元/百万 token（以官�
 ### 团队多人怎么用
 
 每人独立 Key、独立 `~/.paperagent/` 目录。不要共享 Key——一人跑爆额度全员停。
+
+---
+
+### 数据存在哪里？怎么清理？
+
+所有本地数据在 `~/.paperagent/`：`history/`（历史草稿）、`usage.log`（token 日志）、两个首启标记、`pandoc/`（离线二进制，**不要删**）。
+
+清理：`paperagent --clean history`（历史）、`--clean logs`（日志）、`--clean all`（全部 + 标记）。加 `--yes` 跳过确认。**数据不上传云端**，详见 DISCLAIMER.md。
 
 ---
 

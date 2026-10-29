@@ -152,6 +152,27 @@ LLM 综述失败回落骨架。看「风险提示」节，那里会写「LLM 润
 
 ---
 
+## 本地数据留存与清理
+
+`~/.paperagent/` 下存放本地数据，**不上传云端**：
+
+| 路径 | 作用 | 能否删 |
+|---|---|---|
+| `history/` | 历史草稿（保留最近 20 次） | 能，`--clean history` |
+| `usage.log` | token 用量记录 | 能，`--clean logs` |
+| `.disclaimer_shown` | 免责声明已读标记 | 能，删后重启会重新提示 |
+| `.data_notice_shown` | 数据外发告知已读标记 | 能，删后重启会重新提示 |
+| `pandoc/` | 离线 pandoc 二进制 | **不要删**，删了导出 docx 会失败 |
+
+清理命令：
+
+    paperagent --clean history   # 删历史草稿
+    paperagent --clean logs      # 删 token 日志
+    paperagent --clean all       # 删以上 + 两个标记文件
+    paperagent --clean all --yes # 跳过确认
+
+不加 `--yes` 时会打印将删路径并要求输入 `y` 确认。
+
 ## 卸载
 
 运行 .\scripts\uninstall.ps1，清理 ~/.paperagent/ 目录和 5 个环境变量（DEEPSEEK_API_KEY、ZAI_API_KEY、ZHIPU_API_KEY、PANDOC_PATH、LLM_PROVIDER）。源码目录需手动删除。

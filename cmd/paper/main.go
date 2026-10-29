@@ -267,6 +267,49 @@ func saveHistory(topic, mode, quality string, placeholders int, tokens int64, md
 }
 
 // pruneHistory 保留最近 n 个历史目录，删更旧的。
+// runClean F6：清理 ~/.paperagent/ 下可删数据。pandoc/ 不清理（离线二进制）。
+func runClean(target string, yes bool) error {
+	dir, err := notice.PaperagentDir()
+	if err != nil {
+		return err
+	}
+	var paths []string
+	switch target {
+	case "history":
+		paths = []string{filepath.Join(dir, "history")}
+	case "logs":
+		paths = []string{filepath.Join(dir, "usage.log")}
+	case "all":
+		paths = []string{
+			filepath.Join(dir, "history"),
+			filepath.Join(dir, "usage.log"),
+			filepath.Join(dir, ".disclaimer_shown"),
+			filepath.Join(dir, ".data_notice_shown"),
+		}
+	default:
+		return fmt.Errorf("invalid --clean %q, must be history/logs/all", target)
+	}
+	fmt.Println("将删除以下路径：")
+	for _, p := range paths {
+		fmt.Println("  " + p)
+	}
+	if !yes {
+		fmt.Print("确认删除？输入 y 继续：")
+		var ans string
+		fmt.Scanln(&ans)
+		if strings.ToLower(strings.TrimSpace(ans)) != "y" {
+			fmt.Println("已取消")
+			return nil
+		}
+	}
+	for _, p := range paths {
+		if err := os.RemoveAll(p); err != nil {
+			return fmt.Errorf("remove %s: %w", p, err)
+		}
+	}
+	fmt.Println("清理完成")
+	return nil
+}
 func pruneHistory(hdir string, n int) {
 	entries, err := os.ReadDir(hdir)
 	if err != nil || len(entries) <= n {
@@ -374,6 +417,8 @@ func run(args []string) error {
 	noEstimateFlag := fs.Bool("no-estimate", false, "跳过跑前成本预估打印")
 	historyFlag := fs.Bool("history", false, "列出最近 10 次历史运行记录")
 	historyShowFlag := fs.Int("history-show", 0, "把第 N 次历史记录（1=最近）的 draft 复制到当前目录")
+	cleanFlag := fs.String("clean", "", "清理本地数据：history | logs | all")
+	yesFlag := fs.Bool("yes", false, "配合 --clean 跳过确认")
 
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -406,6 +451,11 @@ func run(args []string) error {
 		fmt.Printf("pandoc 已安装：%s\n", bin)
 		fmt.Println("后续导出无需再手动配置 PANDOC_PATH。")
 		return nil
+	}
+
+	// F6：清理本地数据。
+	if *cleanFlag != "" {
+		return runClean(*cleanFlag, *yesFlag)
 	}
 
 	// D3：独立子命令 --history 和 --history-show
@@ -574,6 +624,11 @@ func run(args []string) error {
 	if cfg.MaxTokensPerRun > 0 && total > cfg.MaxTokensPerRun {
 		fmt.Fprintf(os.Stderr, "警告：本次 token 用量 %d 超过单次上限 %d，已保留结果但建议检查 prompt 是否过长\n", total, cfg.MaxTokensPerRun)
 		fmt.Println("TOKENS_OVER_LIMIT=1")
+	}
+
+	// F6：清理本地数据。
+	if *cleanFlag != "" {
+		return runClean(*cleanFlag, *yesFlag)
 	}
 
 	// D3：保存历史记录（保留最近 20 次）
