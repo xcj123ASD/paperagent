@@ -25,5 +25,15 @@ go test ./...
 if ($LASTEXITCODE -ne 0) { exit 1 }
 Write-Host "OK" -ForegroundColor Green
 
+Write-Host "=== govulncheck ===" -ForegroundColor Cyan
+$govuln = Join-Path (go env GOPATH) "bin\govulncheck.exe"
+if (-not (Test-Path $govuln)) {
+    Write-Host "govulncheck not found. Run: go install golang.org/x/vuln/cmd/govulncheck@latest" -ForegroundColor Red
+    exit 1
+}
+& $govuln ./...
+if ($LASTEXITCODE -ne 0) { exit 1 }
+Write-Host "OK" -ForegroundColor Green
+
 Write-Host ""
 Write-Host "ALL PASSED" -ForegroundColor Green
