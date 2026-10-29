@@ -26,6 +26,38 @@ func main() {
 	}
 }
 
+// hasAPIKey 检测是否配置了任一 LLM API Key。
+func hasAPIKey() bool {
+	if os.Getenv("DEEPSEEK_API_KEY") != "" {
+		return true
+	}
+	if os.Getenv("ZAI_API_KEY") != "" {
+		return true
+	}
+	if os.Getenv("ZHIPU_API_KEY") != "" {
+		return true
+	}
+	return false
+}
+
+// printFirstRunGuide 首次运行引导：无 Key 时打印配置指引。
+func printFirstRunGuide() {
+	fmt.Println("=== 首次运行引导 ===")
+	fmt.Println("未检测到 LLM API Key，当前使用 Mock 模式（生成占位内容，仅供流程测试）。")
+	fmt.Println()
+	fmt.Println("如需真实生成，请配置以下任一 Key：")
+	fmt.Println("  1. DeepSeek（推荐，便宜且稳定）")
+	fmt.Println("     申请：https://platform.deepseek.com/")
+	fmt.Println("     配置：setx DEEPSEEK_API_KEY \"你的Key\"")
+	fmt.Println("  2. 智谱（备用）")
+	fmt.Println("     申请：https://open.bigmodel.cn/")
+	fmt.Println("     配置：setx ZAI_API_KEY \"你的Key\"")
+	fmt.Println()
+	fmt.Println("配置后：关闭当前终端重新打开，或运行 . .\\load.ps1，再重新执行本命令。")
+	fmt.Println("如果只想测试流程，可忽略此提示（Mock 模式不影响命令退出码）。")
+	fmt.Println()
+}
+
 func run(args []string) error {
 	fs := flag.NewFlagSet("paper", flag.ContinueOnError)
 
@@ -42,6 +74,11 @@ func run(args []string) error {
 
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+
+	// B3：首次运行引导。只在真实 LLM 模式下提示，Mock 测试不打印。
+	if os.Getenv("LLM_PROVIDER") != "mock" && !hasAPIKey() {
+		printFirstRunGuide()
 	}
 
 	cfg := config.Config{Mock: true}
