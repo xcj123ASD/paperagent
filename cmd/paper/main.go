@@ -21,6 +21,7 @@ import (
 	"paperagent/internal/flow"
 	"paperagent/internal/llm"
 	"paperagent/internal/model"
+	"paperagent/internal/notice"
 	"paperagent/internal/pandocinstall"
 	"paperagent/internal/pipeline"
 	"paperagent/internal/quality"
@@ -81,28 +82,25 @@ func printFirstRunGuide() {
 	fmt.Println()
 }
 
-// printDataNotice C3：首次真实运行时告知数据外发。
-// 已提示过则跳过；写标记文件 ~/.paperagent/.data_notice_shown。
+// printDataNotice C3：首次真实运行时告知数据外发（复用 internal/notice）。
 func printDataNotice() {
-	dir, err := paperagentDir()
-	if err != nil {
-		return
-	}
-	marker := filepath.Join(dir, ".data_notice_shown")
-	if _, statErr := os.Stat(marker); statErr == nil {
-		return
-	}
-	fmt.Println("=== 数据外发告知（首次运行）===")
-	fmt.Println("本工具需要调用大模型 API 生成正文。以下内容会发送给 LLM 服务商（默认 DeepSeek）：")
-	fmt.Println("  - 研究设计 JSON 中的主题、变量、模型、数据来源等描述")
-	fmt.Println("  - 参考文献的标题、作者、年份、摘要、结论字段")
-	fmt.Println("  - 章节标题与要点")
-	fmt.Println("不会发送：CSMAR 原始数据文件、draft.md 已有正文、API Key")
-	fmt.Println()
-	fmt.Println("如有未发表数据或敏感信息，请先脱敏再运行。")
-	fmt.Println("此提示只显示一次；撤回同意：删除 ~/.paperagent/.data_notice_shown 后重启即可重新提示。")
-	fmt.Println()
-	_ = os.WriteFile(marker, []byte(time.Now().Format(time.RFC3339)+"\n"), 0644)
+	_ = notice.ShowOnce(".data_notice_shown", []string{
+		"=== 数据外发告知（首次运行）===",
+		"本工具需要调用大模型 API 生成正文。以下内容会发送给 LLM 服务商（默认 DeepSeek）：",
+		"  - 研究设计 JSON 中的主题、变量、模型、数据来源等描述",
+		"  - 参考文献的标题、作者、年份、摘要、结论字段",
+		"  - 章节标题与要点",
+		"不会发送：CSMAR 原始数据文件、draft.md 已有正文、API Key",
+		"",
+		"如有未发表数据或敏感信息，请先脱敏再运行。",
+		"此提示只显示一次；撤回同意：删除 ~/.paperagent/.data_notice_shown 后重启即可重新提示。",
+		"",
+	})
+}
+
+// printDisclaimer F5：首次真实运行时打印免责声明。
+func printDisclaimer() {
+	_ = notice.ShowOnce(".disclaimer_shown", notice.DisclaimerLines)
 }
 
 // estimateTokens C4：跑前粗估 token 用量和成本。
@@ -379,6 +377,11 @@ func run(args []string) error {
 
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+
+	// F5：首次运行打印免责声明，Mock 测试跳过。
+	if os.Getenv("LLM_PROVIDER") != "mock" {
+		printDisclaimer()
 	}
 
 	// 独立子命令：--install-pandoc 只装 pandoc，不生成论文。

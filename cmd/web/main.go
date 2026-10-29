@@ -21,6 +21,7 @@ import (
 	"paperagent/internal/export"
 	"paperagent/internal/flow"
 	"paperagent/internal/model"
+	"paperagent/internal/notice"
 	"paperagent/internal/pipeline"
 	"paperagent/internal/quality"
 	"paperagent/internal/render"
@@ -241,6 +242,9 @@ func replaceExt(path, newExt string) string {
 func main() {
 	port := flag.Int("port", 8080, "Web 服务端口")
 	flag.Parse()
+
+	// F5：首启打印免责声明。
+	_ = notice.ShowOnce(".disclaimer_shown", notice.DisclaimerLines)
 
 	mux := http.NewServeMux()
 
