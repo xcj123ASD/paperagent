@@ -22,6 +22,7 @@ import (
 	"paperagent/internal/flow"
 	"paperagent/internal/model"
 	"paperagent/internal/pipeline"
+	"paperagent/internal/quality"
 	"paperagent/internal/render"
 )
 
@@ -189,6 +190,23 @@ func executeTask(id string, form url.Values) {
 	}
 
 	md := render.Markdown(frame, refsText)
+
+	// 质量检测，结果写入日志
+	report := quality.Check(md, cfg.Refs)
+	qualityStr := "FAIL"
+	if report.AllPass() {
+		qualityStr = "PASS"
+	}
+	appendLog(id, fmt.Sprintf("质量检测: %s, 占位符 %d 处", qualityStr, report.PlaceholderCount))
+	for _, h := range report.LitReviewIssues {
+		appendLog(id, "综述问题: "+h)
+	}
+	for _, h := range report.CitationIssues {
+		appendLog(id, "引用问题: "+h)
+	}
+	for _, h := range report.CitationWarnings {
+		appendLog(id, "引用警告: "+h)
+	}
 
 	outputFile := fmt.Sprintf("draft_web_%s.md", id)
 	if err := os.WriteFile(outputFile, []byte(md), 0644); err != nil {
