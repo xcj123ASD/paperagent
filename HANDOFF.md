@@ -224,3 +224,23 @@ cmd/paper/main.go        # 主入口
 - 审计结论：`usage.log` 只记 token/时间/耗时，无敏感信息，不用改
 - commit：93098b8（ahead 1，push 网络失败待推）
 - 下一项：F3 输入校验
+
+### F3 文件大小校验（2026-10-29 完成）
+- 新增 `internal/validate` 包：`validate.FileSize(path, limitBytes)`，默认上限 10MB，检查存在/目录/超限
+- 接入 `internal/design/loader.go`（`os.ReadFile` 前）、`internal/cite/process.go`（`ProcessRefs` 和 `LoadRefs`）
+- `LoadRefs` 额外加 `len(refs) == 0` 报错
+- 5 个测试全 PASS
+- commit：82533cc（ahead 2，push 网络失败待推）
+- 下一步：F4 依赖安全
+
+### F4 依赖安全（2026-10-29 完成）
+- Go 1.27.2 → 1.27.3，修 GO-2026-6809（crypto/x509，CVSS 6.8 中危，可达路径 internal/pandocinstall）
+- GOPROXY 改 `https://goproxy.cn,direct`，GOSUMDB 改 `sum.golang.google.cn`（官方代理连不上）
+- govulncheck 装在 `%GOPATH%\bin`，CI 用 `Join-Path (go env GOPATH)` 定位，不依赖 PATH
+- `scripts/ci.ps1` 加 `govulncheck ./...` 阻断模式，基线 `No vulnerabilities found.`
+- commit：a4e1f04（ahead 4，push 网络失败待推）
+- 下一步：F5 免责声明
+
+### 累计进度（2026-10-29）
+- A 5/5 ✅ / B 5/5 ✅ / C 3/3 ✅ / D 7/7 ✅ / F 4/5（F1–F4 完成，待 F5 免责声明、F6 数据留存）
+- 累计约 23/62 天 ≈ 37%
