@@ -156,3 +156,13 @@ cmd/paper/main.go        # 主入口
 - A4 端到端测试 ✅（baf909b，7 个 cmd/paper 测试）
 - A5 断点续跑 ✅（37ba583 + 43ac422）
 - 下一组：B 分发安装（B1 单 exe、B2 install.ps1、B3 首启引导、B4 卸载），5 天
+
+### B 组分发安装 5/5 天完成（2026-10-29）
+- B1 `--install-pandoc`：多镜像（ghfast.top / gh-proxy.com / github.com），15 分钟超时，失败给 3 条手动方案
+- B2 `scripts/install.ps1`：检测 Go/Pandoc/API Key，打印运行方式
+- B3 首启引导：无 Key 打印 DeepSeek/智谱申请地址和 setx 命令
+- B4 `scripts/uninstall.ps1`：清理 ~/.paperagent/ + 5 个环境变量，需 y 确认
+- 新增包：`internal/pandocinstall`（下载/解压/校验/多镜像）
+- **铁律**：所有 .ps1 写完必须重写 BOM，否则 PowerShell 5.1 按 GBK 读中文乱码
+- 已知限制：本机网络受限，自动下载 pandoc 不可用，手动 winget 或离线 exe 兜底
+- 下一组：C 成本配额（C1 token 统计、C2 单次上限、C3 数据外发告知、C4 成本预估），3 天
