@@ -21,8 +21,8 @@ import (
 // DefaultVersion 默认下载的 pandoc 版本。
 const DefaultVersion = "3.1.11"
 
-// downloadTimeout 下载整体超时。
-const downloadTimeout = 10 * time.Minute
+// downloadTimeout 单次下载超时。慢网（如国内访问 GitHub）可能需要 10+ 分钟。
+const downloadTimeout = 15 * time.Minute
 
 type platformInfo struct {
 	urlSuffix string
@@ -48,17 +48,32 @@ func platformFor(version string) (platformInfo, error) {
 	}
 }
 
-// DownloadURL 返回某版本 pandoc 在当前平台的下载地址与归档类型。
-func DownloadURL(version string) (string, string, error) {
+// DownloadURLs 返回某版本 pandoc 的多个下载地址，按优先级排。
+// 中国大陆访问 GitHub 不稳定，优先走镜像代理。
+func DownloadURLs(version string) ([]string, string, error) {
 	if version == "" {
 		version = DefaultVersion
 	}
 	p, err := platformFor(version)
 	if err != nil {
+		return nil, "", err
+	}
+	ghPath := fmt.Sprintf("jgm/pandoc/releases/download/%s/%s", version, p.urlSuffix)
+	urls := []string{
+		"https://ghfast.top/https://github.com/" + ghPath,
+		"https://gh-proxy.com/https://github.com/" + ghPath,
+		"https://github.com/" + ghPath,
+	}
+	return urls, p.archive, nil
+}
+
+// DownloadURL 返回首选下载地址（兼容旧调用）。
+func DownloadURL(version string) (string, string, error) {
+	urls, archive, err := DownloadURLs(version)
+	if err != nil {
 		return "", "", err
 	}
-	url := fmt.Sprintf("https://github.com/jgm/pandoc/releases/download/%s/%s", version, p.urlSuffix)
-	return url, p.archive, nil
+	return urls[0], archive, nil
 }
 
 // IsInstalled 检查用户目录是否已有 pandoc 可执行文件。
@@ -91,13 +106,12 @@ func InstalledVersion(ctx context.Context) string {
 }
 
 // Install 下载并安装 pandoc 到 ~/.paperagent/pandoc/。
-// progress 可为 nil；非 nil 时回调下载进度文本。
-// 返回安装后的可执行文件路径。
+// 依次尝试镜像地址，任一成功即可。
 func Install(ctx context.Context, version string, progress func(string)) (string, error) {
 	if version == "" {
 		version = DefaultVersion
 	}
-	url, archive, err := DownloadURL(version)
+	urls, archive, err := DownloadURLs(version)
 	if err != nil {
 		return "", err
 	}
@@ -115,44 +129,25 @@ func Install(ctx context.Context, version string, progress func(string)) (string
 		return "", fmt.Errorf("创建目录失败: %w", err)
 	}
 
-	log(fmt.Sprintf("下载地址：%s", url))
-	cctx, cancel := context.WithTimeout(ctx, downloadTimeout)
-	defer cancel()
-	req, err := http.NewRequestWithContext(cctx, "GET", url, nil)
-	if err != nil {
-		return "", fmt.Errorf("构造请求失败: %w", err)
+	var tmpPath string
+	var lastErr error
+	for i, url := range urls {
+		log(fmt.Sprintf("[%d/%d] 尝试下载：%s", i+1, len(urls), url))
+		path, err := downloadToTemp(ctx, url, archive, log)
+		if err != nil {
+			log(fmt.Sprintf("    失败：%v", err))
+			lastErr = err
+			continue
+		}
+		tmpPath = path
+		break
 	}
-	req.Header.Set("User-Agent", "paperagent/pandoc-installer")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("下载失败: %w", err)
+	if tmpPath == "" {
+		return "", fmt.Errorf("所有下载地址均失败（最后一个错误：%v）。\n请检查网络，或手动安装：\n  1. winget install JohnMacFarlane.Pandoc\n  2. 或从 https://pandoc.org/installing.html 下载后设置 PANDOC_PATH 环境变量", lastErr)
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("下载失败 HTTP %d: %s", resp.StatusCode, url)
-	}
-
-	suffix := "." + archive
-	tmp, err := os.CreateTemp("", "pandoc-download-*"+suffix)
-	if err != nil {
-		return "", fmt.Errorf("创建临时文件失败: %w", err)
-	}
-	tmpPath := tmp.Name()
 	defer os.Remove(tmpPath)
 
-	log(fmt.Sprintf("下载中（总大小 %d MB）...", resp.ContentLength/1024/1024))
-	pr := &progressReader{
-		r:     resp.Body,
-		total: resp.ContentLength,
-		log:   log,
-	}
-	if _, err := io.Copy(tmp, pr); err != nil {
-		tmp.Close()
-		return "", fmt.Errorf("写入临时文件失败: %w", err)
-	}
-	tmp.Close()
 	log("下载完成，开始解压")
-
 	binName := "pandoc"
 	if runtime.GOOS == "windows" {
 		binName = "pandoc.exe"
@@ -184,6 +179,48 @@ func Install(ctx context.Context, version string, progress func(string)) (string
 	return destBin, nil
 }
 
+// downloadToTemp 下载 url 到临时文件，返回路径。
+func downloadToTemp(ctx context.Context, url, archive string, log func(string)) (string, error) {
+	cctx, cancel := context.WithTimeout(ctx, downloadTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(cctx, "GET", url, nil)
+	if err != nil {
+		return "", fmt.Errorf("构造请求失败: %w", err)
+	}
+	req.Header.Set("User-Agent", "paperagent/pandoc-installer")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+
+	suffix := "." + archive
+	tmp, err := os.CreateTemp("", "pandoc-download-*"+suffix)
+	if err != nil {
+		return "", fmt.Errorf("创建临时文件失败: %w", err)
+	}
+	tmpPath := tmp.Name()
+
+	if resp.ContentLength > 0 {
+		log(fmt.Sprintf("    总大小 %d MB", resp.ContentLength/1024/1024))
+	}
+	pr := &progressReader{
+		r:     resp.Body,
+		total: resp.ContentLength,
+		log:   log,
+	}
+	if _, err := io.Copy(tmp, pr); err != nil {
+		tmp.Close()
+		os.Remove(tmpPath)
+		return "", fmt.Errorf("写入失败: %w", err)
+	}
+	tmp.Close()
+	return tmpPath, nil
+}
+
 // progressReader 每 5MB 回调一次进度。
 type progressReader struct {
 	r     io.Reader
@@ -199,9 +236,9 @@ func (p *progressReader) Read(b []byte) (int, error) {
 	if p.read-p.last >= 5*1024*1024 {
 		p.last = p.read
 		if p.total > 0 {
-			p.log(fmt.Sprintf("已下载 %d / %d MB", p.read/1024/1024, p.total/1024/1024))
+			p.log(fmt.Sprintf("    已下载 %d / %d MB", p.read/1024/1024, p.total/1024/1024))
 		} else {
-			p.log(fmt.Sprintf("已下载 %d MB", p.read/1024/1024))
+			p.log(fmt.Sprintf("    已下载 %d MB", p.read/1024/1024))
 		}
 	}
 	return n, err

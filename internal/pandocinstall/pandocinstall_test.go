@@ -49,8 +49,30 @@ func TestDownloadURL_DefaultVersion(t *testing.T) {
 	}
 }
 
+func TestDownloadURLs_MultipleMirrors(t *testing.T) {
+	urls, archive, err := DownloadURLs("3.1.11")
+	if err != nil {
+		t.Skipf("当前平台不支持: %v", err)
+	}
+	if len(urls) < 2 {
+		t.Errorf("应至少有 2 个镜像地址，实际 %d", len(urls))
+	}
+	if archive == "" {
+		t.Error("归档类型不应为空")
+	}
+	// 至少一个地址含 github.com
+	hasGH := false
+	for _, u := range urls {
+		if strings.Contains(u, "github.com") {
+			hasGH = true
+		}
+	}
+	if !hasGH {
+		t.Error("URL 列表中应至少有一个 github.com 原始地址")
+	}
+}
+
 func TestIsInstalled_NoDir(t *testing.T) {
-	// 用户目录可能已安装 pandoc，此测试仅在未安装时断言 false
 	if IsInstalled() {
 		t.Skip("本机已安装 pandoc，跳过")
 	}

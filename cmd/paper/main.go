@@ -99,6 +99,16 @@ func run(args []string) error {
 			fmt.Println(msg)
 		})
 		if err != nil {
+			fmt.Fprintln(os.Stderr, "")
+			fmt.Fprintln(os.Stderr, "自动下载失败，推荐以下手动方案（任一即可）：")
+			fmt.Fprintln(os.Stderr, "")
+			fmt.Fprintln(os.Stderr, "方案 A（推荐，最快）：winget install JohnMacFarlane.Pandoc")
+			fmt.Fprintln(os.Stderr, "  安装后运行：cd E:\\lunwenagent; . .\\load.ps1 即可自动识别")
+			fmt.Fprintln(os.Stderr, "")
+			fmt.Fprintln(os.Stderr, "方案 B：从 https://pandoc.org/installing.html 下载 MSI 安装包")
+			fmt.Fprintln(os.Stderr, "  安装后设置环境变量：setx PANDOC_PATH \"C:\\Program Files\\Pandoc\\pandoc.exe\"")
+			fmt.Fprintln(os.Stderr, "")
+			fmt.Fprintln(os.Stderr, "方案 C：向项目维护者索取离线 pandoc.exe，放入 ~/.paperagent/pandoc/ 即可")
 			return fmt.Errorf("安装 pandoc 失败: %w", err)
 		}
 		fmt.Printf("pandoc 已安装：%s\n", bin)
