@@ -181,3 +181,10 @@ cmd/paper/main.go        # 主入口
 - C 成本配额 3/3 ✅
 - 累计 13/62 天 ≈ 21%
 - 下一组：D 用户体验（7 天），建议从 D2 错误可读开始，D1 本地 Web 3 天需先确认依赖
+
+### D2 错误可读（2026-10-29 完成）
+- 新建 `internal/errhint` 包：HTTP 401/402/403/404/429/5xx、超时、pandoc、design/refs 加载、token 配额、生成内容过短、润色失败，全部翻译成「原因 + 怎么办」
+- 接入两处：`main()` 里 `errhint.Explain(err)` 处理 run() 返回的 error；`run()` 里遍历 `frame.RiskHints` 翻译技术错误
+- 已知问题：DeepSeek Key 失效时 FallbackClient 静默切智谱 glm-5.3，推理模型返回空，用户看到「生成内容过短」。errhint 已提示「可能被切到智谱」，根治需 FallbackClient 记切换日志（后续任务）
+- 工具铁律：改 .go 用 VSCode（code .\文件），不用 notepad 整文件粘贴，notepad 会吃 `})` 换行和 `""` 引号
+- 下一项：D4 README_USER.md（1 天）
