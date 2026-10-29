@@ -247,3 +247,18 @@ func TestRun_OutputSubstantial(t *testing.T) {
 		t.Errorf("章节数过少：%d", sectionCount)
 	}
 }
+
+// TestRun_InstallPandocFlagAccepted 验证 --install-pandoc=false 被解析且不触发下载。
+func TestRun_InstallPandocFlagAccepted(t *testing.T) {
+	t.Setenv("LLM_PROVIDER", "mock")
+	out := filepath.Join(t.TempDir(), "draft.md")
+	err := run([]string{
+		"--topic", "测试",
+		"--mode", "thesis",
+		"--output", out,
+		"--install-pandoc=false",
+	})
+	if err != nil {
+		t.Fatalf("--install-pandoc=false 不应报错: %v", err)
+	}
+}

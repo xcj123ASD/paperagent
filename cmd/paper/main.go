@@ -14,6 +14,7 @@ import (
 	"paperagent/internal/export"
 	"paperagent/internal/flow"
 	"paperagent/internal/model"
+	"paperagent/internal/pandocinstall"
 	"paperagent/internal/pipeline"
 	"paperagent/internal/quality"
 	"paperagent/internal/render"
@@ -58,6 +59,20 @@ func printFirstRunGuide() {
 	fmt.Println()
 }
 
+// printPandocHint 导出前若未找到 pandoc，提示安装方法。
+func printPandocHint() {
+	if pandocinstall.IsInstalled() {
+		return
+	}
+	if os.Getenv("PANDOC_PATH") != "" {
+		return
+	}
+	fmt.Println("提示：未检测到 pandoc，--export 可能失败。")
+	fmt.Println("      自动安装：paperagent --install-pandoc")
+	fmt.Println("      手动安装：winget install JohnMacFarlane.Pandoc")
+	fmt.Println()
+}
+
 func run(args []string) error {
 	fs := flag.NewFlagSet("paper", flag.ContinueOnError)
 
@@ -71,14 +86,34 @@ func run(args []string) error {
 	mailtoFlag := fs.String("mailto", "", "OpenAlex 礼貌池邮箱（可选）")
 	exportFlag := fs.String("export", "", "导出格式：docx / tex / html（为空则只生成 md）")
 	resumeFlag := fs.Bool("resume", true, "断点续跑：检测到 <output>.progress.json 时从断点继续，false 则忽略进度文件从头跑")
+	installPandocFlag := fs.Bool("install-pandoc", false, "下载并安装 pandoc 到 ~/.paperagent/pandoc/，安装后退出")
 
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
+	// 独立子命令：--install-pandoc 只装 pandoc，不生成论文。
+	if *installPandocFlag {
+		fmt.Println("=== 安装 pandoc ===")
+		bin, err := pandocinstall.Install(context.Background(), "", func(msg string) {
+			fmt.Println(msg)
+		})
+		if err != nil {
+			return fmt.Errorf("安装 pandoc 失败: %w", err)
+		}
+		fmt.Printf("pandoc 已安装：%s\n", bin)
+		fmt.Println("后续导出无需再手动配置 PANDOC_PATH。")
+		return nil
+	}
+
 	// B3：首次运行引导。只在真实 LLM 模式下提示，Mock 测试不打印。
 	if os.Getenv("LLM_PROVIDER") != "mock" && !hasAPIKey() {
 		printFirstRunGuide()
+	}
+
+	// 导出前提示 pandoc 缺失，不阻塞生成。
+	if *exportFlag != "" {
+		printPandocHint()
 	}
 
 	cfg := config.Config{Mock: true}
