@@ -1,6 +1,7 @@
 package step3
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -70,6 +71,7 @@ func (s Stage) fallbackContent(sec *model.Section) (string, bool) {
 
 // loadProgress 从进度文件按 section name 合并已完成内容到 f。
 // 文件不存在、解析失败、ProgressPath 为空时静默跳过。
+// 自动剥离 UTF-8 BOM——PowerShell Set-Content -Encoding UTF8 默认带 BOM。
 func (s Stage) loadProgress(f *model.Frame) {
 	if s.ProgressPath == "" {
 		return
@@ -78,6 +80,7 @@ func (s Stage) loadProgress(f *model.Frame) {
 	if err != nil {
 		return
 	}
+	data = bytes.TrimPrefix(data, []byte{0xEF, 0xBB, 0xBF})
 	var pd progressData
 	if err := json.Unmarshal(data, &pd); err != nil {
 		return

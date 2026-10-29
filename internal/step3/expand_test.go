@@ -337,3 +337,31 @@ func TestStage_ProgressRoundTrip(t *testing.T) {
 		t.Errorf("第二节原为空，不应被恢复，实际: %q", dst.Sections[1].Content)
 	}
 }
+
+// TestStage_ProgressWithBOM 验证进度文件带 UTF-8 BOM 也能解析。
+// PowerShell Set-Content -Encoding UTF8 默认带 BOM，真实场景会遇到。
+func TestStage_ProgressWithBOM(t *testing.T) {
+	dir := t.TempDir()
+	progressPath := filepath.Join(dir, "draft.md.progress.json")
+
+	bom := []byte{0xEF, 0xBB, 0xBF}
+	content := `{"sections":[{"name":"引言","content":"BOM 测试内容"}]}`
+	if err := os.WriteFile(progressPath, append(bom, []byte(content)...), 0644); err != nil {
+		t.Fatalf("write progress: %v", err)
+	}
+
+	input := makeFrameJSON(t, simpleFrame())
+	rec := &recordExpandClient{}
+	ctx := pipeline.NewContext(true, false)
+	out, err := Stage{LLM: rec, ProgressPath: progressPath}.Run(ctx, input)
+	if err != nil {
+		t.Fatalf("Run 失败: %v", err)
+	}
+	var got model.Frame
+	if err := json.Unmarshal(out, &got); err != nil {
+		t.Fatalf("解析输出失败: %v", err)
+	}
+	if got.Sections[0].Content != "BOM 测试内容" {
+		t.Errorf("带 BOM 的进度文件应被解析，引言实际: %q", got.Sections[0].Content)
+	}
+}
