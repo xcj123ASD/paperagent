@@ -141,3 +141,18 @@ cmd/paper/main.go        # 主入口
 - Run 11 FAIL 原因：LLM 幻觉 Malgue(1990)，应为 Levinthal(1990)，检测正确抓到
 - 结论：A2 检测有效，幻觉可见不阻塞；A3 门禁通过
 - 下一项：A4 cmd/paper mock 端到端测试进 CI
+
+### A5 断点续跑（2026-10-29 完成）
+- commit 37ba583 + 43ac422：progress.json 每节完成后保存，中断后按 section name 合并恢复；BOM 自动剥离
+- 新增 4 函数：loadProgress/saveProgress/removeProgress/processSection
+- 测试：13 个 step3 测试全 PASS（含 BOM 场景）
+- 实跑验证：手动造进度文件，引言保留"上次中断前的引言内容"，未重写
+- 用法：默认启用，--resume=false 禁用；进度文件 <output>.progress.json，完成后自动删除
+
+### A 组可靠性 5/5 天全部完成
+- A1 字数控制 ✅（0e720ed + 87fb477）
+- A2 质量检测 ✅（1d9c5ec）
+- A3 20 次统计 ✅（acb873c，95% 通过率）
+- A4 端到端测试 ✅（baf909b，7 个 cmd/paper 测试）
+- A5 断点续跑 ✅（37ba583 + 43ac422）
+- 下一组：B 分发安装（B1 单 exe、B2 install.ps1、B3 首启引导、B4 卸载），5 天
