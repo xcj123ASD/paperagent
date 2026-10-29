@@ -166,3 +166,18 @@ cmd/paper/main.go        # 主入口
 - **铁律**：所有 .ps1 写完必须重写 BOM，否则 PowerShell 5.1 按 GBK 读中文乱码
 - 已知限制：本机网络受限，自动下载 pandoc 不可用，手动 winget 或离线 exe 兜底
 - 下一组：C 成本配额（C1 token 统计、C2 单次上限、C3 数据外发告知、C4 成本预估），3 天
+
+### C 组成本配额 3/3 天完成（2026-10-29）
+- C1 token 统计：`client.go` 加 `UsageReporter` 接口、`OpenAICompatClient.Usage()`、`addUsage`；`main.go` 加 `reportUsage` 写 ~/.paperagent/usage.log
+- C2 单次/单日上限：`--max-tokens-per-run`、`--max-tokens-per-day`，默认 0 不限；单日超限拒绝运行，单次超限保留结果打 TOKENS_OVER_LIMIT=1
+- C3 数据外发告知：首次真实运行打印，写 ~/.paperagent/.data_notice_shown 标记
+- C4 成本预估：跑前打印 ESTIMATED_TOKENS 和 ESTIMATED_COST，`--no-estimate` 可关
+- 实测：一次 journal 跑约 11466 token，成本约 0.02 元
+- 已知 LLM 幻觉：本次跑出 `照温忠麟(2014)`，refs 中无此文献，A2 检测正确抓到，需 prompt 约束加强或人工修正
+
+### 累计进度
+- A 可靠性 5/5 ✅
+- B 分发安装 5/5 ✅
+- C 成本配额 3/3 ✅
+- 累计 13/62 天 ≈ 21%
+- 下一组：D 用户体验（7 天），建议从 D2 错误可读开始，D1 本地 Web 3 天需先确认依赖
