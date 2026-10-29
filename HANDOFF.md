@@ -216,3 +216,11 @@ cmd/paper/main.go        # 主入口
 - `.gitignore` 覆盖：`key.txt`、`env.ps1`、`load.ps1`、`*.log`、`*.progress.json`、`runs/`、`stats*.csv`
 - 补齐缺口：`draft_history_*.md`（D3 产物）、`draft_web_*.md`（Web 产物）
 - 下一项：F2 日志脱敏
+
+### F2 日志脱敏（2026-10-29 完成）
+- `internal/llm/client.go`：`HTTPError.Error()` 把 body 截断到 200 字符，超出加 `...(truncated)`
+- `cmd/web/main.go`：design 加载日志从完整路径改为 `filepath.Base()`，不泄露用户名
+- 新增 2 测试：`TestHTTPError_TruncatesLongBody`、`TestHTTPError_ShortBodyNotTruncated`
+- 审计结论：`usage.log` 只记 token/时间/耗时，无敏感信息，不用改
+- commit：93098b8（ahead 1，push 网络失败待推）
+- 下一项：F3 输入校验
