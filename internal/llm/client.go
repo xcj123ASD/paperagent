@@ -207,7 +207,11 @@ type HTTPError struct {
 }
 
 func (e *HTTPError) Error() string {
-	return fmt.Sprintf("LLM 返回 %d: %s", e.StatusCode, e.Body)
+	body := e.Body
+	if len(body) > 200 {
+		body = body[:200] + "...(truncated)"
+	}
+	return fmt.Sprintf("LLM 返回 %d: %s", e.StatusCode, body)
 }
 
 func isRetryable(err error) bool {

@@ -229,3 +229,31 @@ func TestNewFromEnv_Both_DeepSeekPrimary(t *testing.T) {
 		t.Errorf("Backup 应为 glm-5.3，实际 %s", b.Model)
 	}
 }
+
+// --- HTTPError 截断（F2）---
+
+func TestHTTPError_TruncatesLongBody(t *testing.T) {
+	long := make([]byte, 500)
+	for i := range long {
+		long[i] = 'x'
+	}
+	e := &HTTPError{StatusCode: 500, Body: string(long)}
+	msg := e.Error()
+	if len(msg) > 250 {
+		t.Errorf("Error() 应截断到 ~200 字符，实际长度 %d", len(msg))
+	}
+	if !strings.Contains(msg, "truncated") {
+		t.Errorf("截断后应含 'truncated'，实际: %s", msg)
+	}
+}
+
+func TestHTTPError_ShortBodyNotTruncated(t *testing.T) {
+	e := &HTTPError{StatusCode: 401, Body: "unauthorized"}
+	msg := e.Error()
+	if !strings.Contains(msg, "unauthorized") {
+		t.Errorf("短 body 应完整保留，实际: %s", msg)
+	}
+	if strings.Contains(msg, "truncated") {
+		t.Errorf("短 body 不应截断，实际: %s", msg)
+	}
+}

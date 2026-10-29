@@ -111,7 +111,7 @@ func executeTask(id string, form url.Values) {
 			return
 		}
 		cfg.Design = &d
-		appendLog(id, "design 加载成功: "+designPath)
+		appendLog(id, "design 加载成功: "+filepath.Base(designPath))
 	}
 
 	if refsPath != "" {
