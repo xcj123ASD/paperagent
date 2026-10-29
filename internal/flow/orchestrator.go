@@ -19,6 +19,7 @@ import (
 type Orchestrator struct {
 	Cfg     config.Config
 	Catalog []model.Journal
+	LLM     llm.Client
 }
 
 // New 构造编排器并注册各阶段。
@@ -51,7 +52,7 @@ func New(cfg config.Config, catalog []model.Journal) *Orchestrator {
 		Mode:  cfg.Mode,
 		LLM:   llmClient,
 	}})
-	return &Orchestrator{Cfg: cfg, Catalog: catalog}
+	return &Orchestrator{Cfg: cfg, Catalog: catalog, LLM: llmClient}
 }
 
 func (o *Orchestrator) Run(inputJSON []byte) ([]byte, error) {

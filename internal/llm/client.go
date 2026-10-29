@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"paperagent/internal/model"
@@ -41,6 +42,12 @@ type ExpandSectionRequest struct {
 type Client interface {
 	KeyPoints(ctx context.Context, req KeyPointRequest) ([]string, error)
 	ExpandSection(ctx context.Context, req ExpandSectionRequest) (string, error)
+}
+
+// UsageReporter 可选接口：实现者可返回累计 token 用量。MockClient 不实现。
+type UsageReporter interface {
+	Usage() (input, output int64)
+	ResetUsage()
 }
 
 type MockClient struct{}
@@ -94,11 +101,30 @@ func (f FallbackClient) ExpandSection(ctx context.Context, req ExpandSectionRequ
 	return f.Backup.ExpandSection(ctx, req)
 }
 
+// Usage 转发 Primary 的用量；Primary 不支持时返回 0。
+func (f FallbackClient) Usage() (int64, int64) {
+	if u, ok := f.Primary.(UsageReporter); ok {
+		return u.Usage()
+	}
+	return 0, 0
+}
+
+// ResetUsage 转发 Primary 的重置。
+func (f FallbackClient) ResetUsage() {
+	if u, ok := f.Primary.(UsageReporter); ok {
+		u.ResetUsage()
+	}
+}
+
 type OpenAICompatClient struct {
 	BaseURL    string
 	APIKey     string
 	Model      string
 	HTTPClient *http.Client
+
+	mu           sync.Mutex
+	inputTokens  int64
+	outputTokens int64
 }
 
 func NewOpenAICompat(baseURL, apiKey, model string) *OpenAICompatClient {
@@ -110,6 +136,28 @@ func NewOpenAICompat(baseURL, apiKey, model string) *OpenAICompatClient {
 			Timeout: 90 * time.Second,
 		},
 	}
+}
+
+// Usage 返回累计输入/输出 token 数（线程安全）。
+func (c *OpenAICompatClient) Usage() (int64, int64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.inputTokens, c.outputTokens
+}
+
+// ResetUsage 清零累计用量。
+func (c *OpenAICompatClient) ResetUsage() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.inputTokens = 0
+	c.outputTokens = 0
+}
+
+func (c *OpenAICompatClient) addUsage(in, out int64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.inputTokens += in
+	c.outputTokens += out
 }
 
 func NewFromEnv() Client {
@@ -397,6 +445,10 @@ func (c *OpenAICompatClient) chat(ctx context.Context, prompt string, maxTokens 
 				Content string `json:"content"`
 			} `json:"message"`
 		} `json:"choices"`
+		Usage struct {
+			PromptTokens     int64 `json:"prompt_tokens"`
+			CompletionTokens int64 `json:"completion_tokens"`
+		} `json:"usage"`
 	}
 	if err := json.Unmarshal(respBody, &result); err != nil {
 		return "", fmt.Errorf("解析 LLM 响应失败: %w", err)
@@ -404,5 +456,7 @@ func (c *OpenAICompatClient) chat(ctx context.Context, prompt string, maxTokens 
 	if len(result.Choices) == 0 {
 		return "", fmt.Errorf("LLM 返回空 choices")
 	}
+	// C1：累加 token 用量
+	c.addUsage(result.Usage.PromptTokens, result.Usage.CompletionTokens)
 	return strings.TrimSpace(result.Choices[0].Message.Content), nil
 }

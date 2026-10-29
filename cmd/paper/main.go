@@ -7,12 +7,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"paperagent/internal/cite"
 	"paperagent/internal/config"
 	"paperagent/internal/design"
 	"paperagent/internal/export"
 	"paperagent/internal/flow"
+	"paperagent/internal/llm"
 	"paperagent/internal/model"
 	"paperagent/internal/pandocinstall"
 	"paperagent/internal/pipeline"
@@ -71,6 +73,38 @@ func printPandocHint() {
 	fmt.Println("      自动安装：paperagent --install-pandoc")
 	fmt.Println("      手动安装：winget install JohnMacFarlane.Pandoc")
 	fmt.Println()
+}
+
+// reportUsage 从 client 读取用量，打印并追加写 ~/.paperagent/usage.log。
+func reportUsage(client llm.Client, mode string, elapsed time.Duration) {
+	u, ok := client.(llm.UsageReporter)
+	if !ok {
+		return
+	}
+	in, out := u.Usage()
+	if in == 0 && out == 0 {
+		return
+	}
+	total := in + out
+	fmt.Printf("TOKENS_INPUT=%d\n", in)
+	fmt.Printf("TOKENS_OUTPUT=%d\n", out)
+	fmt.Printf("TOKENS_TOTAL=%d\n", total)
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+	logDir := filepath.Join(home, ".paperagent")
+	_ = os.MkdirAll(logDir, 0755)
+	logPath := filepath.Join(logDir, "usage.log")
+	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	line := fmt.Sprintf("%s mode=%s input=%d output=%d total=%d elapsed=%.1fs\n",
+		time.Now().Format("2006-01-02T15:04:05"), mode, in, out, total, elapsed.Seconds())
+	_, _ = f.WriteString(line)
 }
 
 func run(args []string) error {
@@ -159,6 +193,7 @@ func run(args []string) error {
 		}
 	}
 
+	start := time.Now()
 	orch := flow.New(cfg, nil)
 
 	input := map[string]interface{}{}
@@ -226,6 +261,9 @@ func run(args []string) error {
 		fmt.Println("QUALITY_STATUS=FAIL")
 	}
 	fmt.Printf("QUALITY_PLACEHOLDERS=%d\n", report.PlaceholderCount)
+
+	// C1：打印 token 用量并写日志
+	reportUsage(orch.LLM, string(cfg.Mode), time.Since(start))
 
 	if *exportFlag == "" {
 		return nil
