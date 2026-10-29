@@ -3,11 +3,17 @@ package cite
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
+
+	"paperagent/internal/validate"
 )
 
 // ProcessRefs 读取 refs.json，可选校验，按 GB/T 7714 格式化，返回参考文献文本。
 func ProcessRefs(path string, verify bool, mailto string) (string, error) {
+	if err := validate.FileSize(path, 0); err != nil {
+		return "", fmt.Errorf("refs 文件检查失败: %w", err)
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return "", err
@@ -35,9 +41,12 @@ func ProcessRefs(path string, verify bool, mailto string) (string, error) {
 	return f.Format(refs)
 }
 
-// LoadRefs 仅加载参考文献 JSON，不做 OpenAlex 校验与 GB/T 7714 格式化。
+// LoadRefs 仅加载参考文献 JSON，不做 OpenAlex 校验与 GB/T 7714格式化。
 // 用于把原始 []Reference 结构传给 step3，供文献综述环节引用真实文献。
 func LoadRefs(path string) ([]Reference, error) {
+	if err := validate.FileSize(path, 0); err != nil {
+		return nil, fmt.Errorf("refs 文件检查失败: %w", err)
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -45,6 +54,9 @@ func LoadRefs(path string) ([]Reference, error) {
 	var refs []Reference
 	if err := json.Unmarshal(data, &refs); err != nil {
 		return nil, err
+	}
+	if len(refs) == 0 {
+		return nil, fmt.Errorf("refs 文件为空数组: %s", path)
 	}
 	return refs, nil
 }
