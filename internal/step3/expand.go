@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -25,6 +26,18 @@ type Stage struct {
 	Design       *design.DesignInput
 	PolishDesign bool
 	Refs         []cite.Reference
+	ProgressPath string // A5：进度文件路径，空则禁用断点续跑
+}
+
+// progressSection 进度文件中单节记录。
+type progressSection struct {
+	Name    string `json:"name"`
+	Content string `json:"content"`
+}
+
+// progressData 进度文件结构。
+type progressData struct {
+	Sections []progressSection `json:"sections"`
 }
 
 func (Stage) Name() string { return "step3_litreview" }
@@ -55,6 +68,236 @@ func (s Stage) fallbackContent(sec *model.Section) (string, bool) {
 	return "", false
 }
 
+// loadProgress 从进度文件按 section name 合并已完成内容到 f。
+// 文件不存在、解析失败、ProgressPath 为空时静默跳过。
+func (s Stage) loadProgress(f *model.Frame) {
+	if s.ProgressPath == "" {
+		return
+	}
+	data, err := os.ReadFile(s.ProgressPath)
+	if err != nil {
+		return
+	}
+	var pd progressData
+	if err := json.Unmarshal(data, &pd); err != nil {
+		return
+	}
+	byName := make(map[string]string, len(pd.Sections))
+	for _, ps := range pd.Sections {
+		byName[ps.Name] = ps.Content
+	}
+	for i := range f.Sections {
+		if c, ok := byName[f.Sections[i].Name]; ok && strings.TrimSpace(c) != "" {
+			f.Sections[i].Content = c
+		}
+	}
+}
+
+// saveProgress 把当前所有非空 section 写入进度文件。
+// 写失败静默忽略——进度文件是辅助，不中断主流程。
+func (s Stage) saveProgress(f *model.Frame) {
+	if s.ProgressPath == "" {
+		return
+	}
+	var pd progressData
+	for _, sec := range f.Sections {
+		if strings.TrimSpace(sec.Content) != "" {
+			pd.Sections = append(pd.Sections, progressSection{Name: sec.Name, Content: sec.Content})
+		}
+	}
+	data, err := json.MarshalIndent(pd, "", "  ")
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(s.ProgressPath, data, 0644)
+}
+
+// removeProgress 删除进度文件。
+func (s Stage) removeProgress() {
+	if s.ProgressPath == "" {
+		return
+	}
+	_ = os.Remove(s.ProgressPath)
+}
+
+// processSection 处理单节。原 Run 循环体提取，continue 改 return。
+func (s Stage) processSection(ctx *pipeline.Context, f *model.Frame, i int, articleType string, mode model.Mode) {
+	sec := &f.Sections[i]
+
+	if s.Design != nil && strings.Contains(sec.Name, "研究设计") {
+		if s.PolishDesign && s.LLM != nil {
+			req := llm.ExpandSectionRequest{
+				Topic:            f.Title,
+				Section:          sec.Name,
+				Role:             sec.Role,
+				KeyPoints:        sec.KeyPoints,
+				WordBudget:       sec.WordBudget,
+				ArticleType:      articleType,
+				PreviousSummary:  buildPreviousSummary(f.Sections, i),
+				RequiredEvidence: sec.RequiredEvidence,
+				Forbidden:        sec.Forbidden,
+				Mode:             mode,
+				DesignContext:    s.designContext(),
+			}
+			polished, err := s.callLLM(req)
+			polished = strings.TrimSpace(polished)
+			if err == nil && len([]rune(polished)) >= 200 {
+				sec.Content = polished
+				ctx.Logf("step3_expand",
+					fmt.Sprintf("章节 %q 用 LLM 润色，%d 字", sec.Name, len([]rune(polished))))
+				return
+			}
+			ctx.Logf("step3_expand",
+				fmt.Sprintf("章节 %q LLM 润色失败或过短，回落模板", sec.Name))
+		}
+		sec.Content = s.Design.RenderSection()
+		ctx.Logf("step3_expand",
+			fmt.Sprintf("章节 %q 用模板生成，%d 字", sec.Name, len([]rune(sec.Content))))
+		return
+	}
+
+	// 实证结果节走模板（与"研究设计"节同模式），优先于 LLM
+	if s.Design != nil && isResultsSection(sec.Name) {
+		sec.Content = design.RenderResultsSection(s.Design.Results)
+		ctx.Logf("step3_expand",
+			fmt.Sprintf("章节 %q 用模板生成，%d 字", sec.Name, len([]rune(sec.Content))))
+		return
+	}
+
+	// 文献综述节：骨架兜底 + LLM 带 refs 润色，失败回落骨架
+	if isLitReviewSection(sec.Name) {
+		skeleton := litreview.RenderSkeleton(s.Refs)
+		if s.LLM != nil {
+			req := llm.ExpandSectionRequest{
+				Topic:            f.Title,
+				Section:          sec.Name,
+				Role:             sec.Role,
+				KeyPoints:        sec.KeyPoints,
+				WordBudget:       sec.WordBudget,
+				ArticleType:      articleType,
+				PreviousSummary:  buildPreviousSummary(f.Sections, i),
+				RequiredEvidence: sec.RequiredEvidence,
+				Forbidden:        sec.Forbidden,
+				Mode:             mode,
+				DesignContext:    s.designContext(),
+				References:       formatRefsForPrompt(s.Refs),
+			}
+			polished, err := s.callLLM(req)
+			polished = strings.TrimSpace(polished)
+			if err == nil && len([]rune(polished)) >= 200 {
+				// 超预算 1.25 倍截断
+				if sec.WordBudget > 0 && len([]rune(polished)) > sec.WordBudget*5/4 {
+					origLen := len([]rune(polished))
+					limit := sec.WordBudget * 5 / 4
+					polished = truncateAtSentence(polished, limit)
+					f.RiskHints = append(f.RiskHints,
+						fmt.Sprintf("章节 %q 超预算（原 %d 字 → 截断至 %d 字，丢弃 %d 字），需人工补",
+							sec.Name, origLen, len([]rune(polished)), origLen-len([]rune(polished))))
+				}
+				sec.Content = polished
+				ctx.Logf("step3_expand",
+					fmt.Sprintf("章节 %q 用 LLM 带文献润色，%d 字", sec.Name, len([]rune(polished))))
+				return
+			}
+			f.RiskHints = append(f.RiskHints,
+				fmt.Sprintf("章节 %q LLM 润色失败或过短，已回落骨架，需人工改写", sec.Name))
+			ctx.Logf("step3_expand",
+				fmt.Sprintf("章节 %q LLM 润色失败或过短，回落骨架", sec.Name))
+		}
+		sec.Content = skeleton
+		ctx.Logf("step3_expand",
+			fmt.Sprintf("章节 %q 用骨架生成，%d 字", sec.Name, len([]rune(sec.Content))))
+		return
+	}
+
+	if s.LLM == nil {
+		f.RiskHints = append(f.RiskHints,
+			fmt.Sprintf("章节 %q 无 LLM 可用，未生成", sec.Name))
+		return
+	}
+
+	req := llm.ExpandSectionRequest{
+		Topic:            f.Title,
+		Section:          sec.Name,
+		Role:             sec.Role,
+		KeyPoints:        sec.KeyPoints,
+		WordBudget:       sec.WordBudget,
+		ArticleType:      articleType,
+		PreviousSummary:  buildPreviousSummary(f.Sections, i),
+		RequiredEvidence: sec.RequiredEvidence,
+		Forbidden:        sec.Forbidden,
+		Mode:             mode,
+		DesignContext:    s.designContext(),
+		References:       formatRefsForPrompt(s.Refs),
+	}
+
+	content, err := s.callLLM(req)
+	if err != nil {
+		f.RiskHints = append(f.RiskHints,
+			fmt.Sprintf("章节 %q 正文生成失败：%v", sec.Name, err))
+		// 失败时也尝试模板兜底，避免引言/结论空白
+		if fb, ok := s.fallbackContent(sec); ok {
+			sec.Content = fb
+			ctx.Logf("step3_expand",
+				fmt.Sprintf("章节 %q LLM 失败，用模板兜底，%d 字", sec.Name, len([]rune(fb))))
+		}
+		return
+	}
+	content = strings.TrimSpace(content)
+
+	if len([]rune(content)) < 100 {
+		ctx.Logf("step3_expand", fmt.Sprintf("章节 %q 返回内容过短（%d 字），重试一次", sec.Name, len([]rune(content))))
+		retryContent, retryErr := s.callLLM(req)
+		if retryErr == nil {
+			retryContent = strings.TrimSpace(retryContent)
+			if len([]rune(retryContent)) >= 100 {
+				content = retryContent
+			}
+		}
+	}
+
+	// 仍然过短：引言/结论走模板兜底，其他节记 RiskHint 写占位符
+	if len([]rune(content)) < 100 {
+		if fb, ok := s.fallbackContent(sec); ok {
+			origLen := len([]rune(content))
+			content = fb
+			f.RiskHints = append(f.RiskHints,
+				fmt.Sprintf("章节 %q LLM 生成内容过短（%d 字），已用模板兜底，需人工改写", sec.Name, origLen))
+			ctx.Logf("step3_expand",
+				fmt.Sprintf("章节 %q 内容过短，用模板兜底，%d 字", sec.Name, len([]rune(content))))
+		} else {
+			f.RiskHints = append(f.RiskHints,
+				fmt.Sprintf("章节 %q 生成内容过短（%d 字，预算 %d 字），需人工补充",
+					sec.Name, len([]rune(content)), sec.WordBudget))
+			content = fmt.Sprintf("*（本节内容生成不足，可能因该章节需要真实文献或数据支撑。建议在此补充：%s）*",
+				strings.Join(sec.KeyPoints, "；"))
+		}
+	} else if sec.WordBudget > 0 {
+		// 内容有效：校验实际字数与预算的偏差
+		actualLen := len([]rune(content))
+		ratio := float64(actualLen) / float64(sec.WordBudget)
+		if ratio < 0.7 || ratio > 1.3 {
+			f.RiskHints = append(f.RiskHints,
+				fmt.Sprintf("章节 %q 字数偏差较大：实际 %d 字，预算 %d 字（偏差 %+.0f%%）",
+					sec.Name, actualLen, sec.WordBudget, (ratio-1)*100))
+		}
+	}
+
+	// 超预算 1.25 倍截断，防止 LLM 无视字数约束
+	if sec.WordBudget > 0 && len([]rune(content)) > sec.WordBudget*5/4 {
+		origLen := len([]rune(content))
+		limit := sec.WordBudget * 5 / 4
+		content = truncateAtSentence(content, limit)
+		f.RiskHints = append(f.RiskHints,
+			fmt.Sprintf("章节 %q 超预算（原 %d 字 → 截断至 %d 字，丢弃 %d 字），需人工补",
+				sec.Name, origLen, len([]rune(content)), origLen-len([]rune(content))))
+	}
+
+	sec.Content = content
+	ctx.Logf("step3_expand",
+		fmt.Sprintf("章节 %q 完成，%d 字（预算 %d）", sec.Name, len([]rune(sec.Content)), sec.WordBudget))
+}
+
 func (s Stage) Run(ctx *pipeline.Context, input []byte) ([]byte, error) {
 	ctx.Logf("step3_expand", fmt.Sprintf("收到输入 %d 字节", len(input)))
 
@@ -65,6 +308,9 @@ func (s Stage) Run(ctx *pipeline.Context, input []byte) ([]byte, error) {
 	if len(f.Sections) == 0 {
 		return nil, fmt.Errorf("step3_expand: sections 为空")
 	}
+
+	// A5：加载进度文件，按 section name 合并已完成内容
+	s.loadProgress(&f)
 
 	if s.LLM == nil && s.Design == nil {
 		ctx.Logf("step3_expand", "LLM 为 nil 且无 Design，跳过正文生成")
@@ -82,185 +328,15 @@ func (s Stage) Run(ctx *pipeline.Context, input []byte) ([]byte, error) {
 	}
 
 	for i := range f.Sections {
-		sec := &f.Sections[i]
-
-		if strings.TrimSpace(sec.Content) != "" {
+		if strings.TrimSpace(f.Sections[i].Content) != "" {
 			continue
 		}
-
-		if s.Design != nil && strings.Contains(sec.Name, "研究设计") {
-			if s.PolishDesign && s.LLM != nil {
-				req := llm.ExpandSectionRequest{
-					Topic:            f.Title,
-					Section:          sec.Name,
-					Role:             sec.Role,
-					KeyPoints:        sec.KeyPoints,
-					WordBudget:       sec.WordBudget,
-					ArticleType:      articleType,
-					PreviousSummary:  buildPreviousSummary(f.Sections, i),
-					RequiredEvidence: sec.RequiredEvidence,
-					Forbidden:        sec.Forbidden,
-					Mode:             mode,
-					DesignContext:    s.designContext(),
-				}
-				polished, err := s.callLLM(req)
-				polished = strings.TrimSpace(polished)
-				if err == nil && len([]rune(polished)) >= 200 {
-					sec.Content = polished
-					ctx.Logf("step3_expand",
-						fmt.Sprintf("章节 %q 用 LLM 润色，%d 字", sec.Name, len([]rune(polished))))
-					continue
-				}
-				ctx.Logf("step3_expand",
-					fmt.Sprintf("章节 %q LLM 润色失败或过短，回落模板", sec.Name))
-			}
-			sec.Content = s.Design.RenderSection()
-			ctx.Logf("step3_expand",
-				fmt.Sprintf("章节 %q 用模板生成，%d 字", sec.Name, len([]rune(sec.Content))))
-			continue
-		}
-
-		// 实证结果节走模板（与"研究设计"节同模式），优先于 LLM
-		if s.Design != nil && isResultsSection(sec.Name) {
-			sec.Content = design.RenderResultsSection(s.Design.Results)
-			ctx.Logf("step3_expand",
-				fmt.Sprintf("章节 %q 用模板生成，%d 字", sec.Name, len([]rune(sec.Content))))
-			continue
-		}
-
-		// 文献综述节：骨架兜底 + LLM 带 refs 润色，失败回落骨架
-		if isLitReviewSection(sec.Name) {
-			skeleton := litreview.RenderSkeleton(s.Refs)
-			if s.LLM != nil {
-				req := llm.ExpandSectionRequest{
-					Topic:            f.Title,
-					Section:          sec.Name,
-					Role:             sec.Role,
-					KeyPoints:        sec.KeyPoints,
-					WordBudget:       sec.WordBudget,
-					ArticleType:      articleType,
-					PreviousSummary:  buildPreviousSummary(f.Sections, i),
-					RequiredEvidence: sec.RequiredEvidence,
-					Forbidden:        sec.Forbidden,
-					Mode:             mode,
-					DesignContext:    s.designContext(),
-					References:       formatRefsForPrompt(s.Refs),
-				}
-				polished, err := s.callLLM(req)
-				polished = strings.TrimSpace(polished)
-				if err == nil && len([]rune(polished)) >= 200 {
-					// 超预算 1.25 倍截断
-					if sec.WordBudget > 0 && len([]rune(polished)) > sec.WordBudget*5/4 {
-						origLen := len([]rune(polished))
-						limit := sec.WordBudget * 5 / 4
-						polished = truncateAtSentence(polished, limit)
-						f.RiskHints = append(f.RiskHints,
-							fmt.Sprintf("章节 %q 超预算（原 %d 字 → 截断至 %d 字，丢弃 %d 字），需人工补",
-								sec.Name, origLen, len([]rune(polished)), origLen-len([]rune(polished))))
-					}
-					sec.Content = polished
-					ctx.Logf("step3_expand",
-						fmt.Sprintf("章节 %q 用 LLM 带文献润色，%d 字", sec.Name, len([]rune(polished))))
-					continue
-				}
-				f.RiskHints = append(f.RiskHints,
-					fmt.Sprintf("章节 %q LLM 润色失败或过短，已回落骨架，需人工改写", sec.Name))
-				ctx.Logf("step3_expand",
-					fmt.Sprintf("章节 %q LLM 润色失败或过短，回落骨架", sec.Name))
-			}
-			sec.Content = skeleton
-			ctx.Logf("step3_expand",
-				fmt.Sprintf("章节 %q 用骨架生成，%d 字", sec.Name, len([]rune(sec.Content))))
-			continue
-		}
-
-		if s.LLM == nil {
-			f.RiskHints = append(f.RiskHints,
-				fmt.Sprintf("章节 %q 无 LLM 可用，未生成", sec.Name))
-			continue
-		}
-
-		req := llm.ExpandSectionRequest{
-			Topic:            f.Title,
-			Section:          sec.Name,
-			Role:             sec.Role,
-			KeyPoints:        sec.KeyPoints,
-			WordBudget:       sec.WordBudget,
-			ArticleType:      articleType,
-			PreviousSummary:  buildPreviousSummary(f.Sections, i),
-			RequiredEvidence: sec.RequiredEvidence,
-			Forbidden:        sec.Forbidden,
-			Mode:             mode,
-			DesignContext:    s.designContext(),
-			References:       formatRefsForPrompt(s.Refs),
-		}
-
-		content, err := s.callLLM(req)
-		if err != nil {
-			f.RiskHints = append(f.RiskHints,
-				fmt.Sprintf("章节 %q 正文生成失败：%v", sec.Name, err))
-			// 失败时也尝试模板兜底，避免引言/结论空白
-			if fb, ok := s.fallbackContent(sec); ok {
-				sec.Content = fb
-				ctx.Logf("step3_expand",
-					fmt.Sprintf("章节 %q LLM 失败，用模板兜底，%d 字", sec.Name, len([]rune(fb))))
-			}
-			continue
-		}
-		content = strings.TrimSpace(content)
-
-		if len([]rune(content)) < 100 {
-			ctx.Logf("step3_expand", fmt.Sprintf("章节 %q 返回内容过短（%d 字），重试一次", sec.Name, len([]rune(content))))
-			retryContent, retryErr := s.callLLM(req)
-			if retryErr == nil {
-				retryContent = strings.TrimSpace(retryContent)
-				if len([]rune(retryContent)) >= 100 {
-					content = retryContent
-				}
-			}
-		}
-
-		// 仍然过短：引言/结论走模板兜底，其他节记 RiskHint 写占位符
-		if len([]rune(content)) < 100 {
-			if fb, ok := s.fallbackContent(sec); ok {
-				origLen := len([]rune(content))
-				content = fb
-				f.RiskHints = append(f.RiskHints,
-					fmt.Sprintf("章节 %q LLM 生成内容过短（%d 字），已用模板兜底，需人工改写", sec.Name, origLen))
-				ctx.Logf("step3_expand",
-					fmt.Sprintf("章节 %q 内容过短，用模板兜底，%d 字", sec.Name, len([]rune(content))))
-			} else {
-				f.RiskHints = append(f.RiskHints,
-					fmt.Sprintf("章节 %q 生成内容过短（%d 字，预算 %d 字），需人工补充",
-						sec.Name, len([]rune(content)), sec.WordBudget))
-				content = fmt.Sprintf("*（本节内容生成不足，可能因该章节需要真实文献或数据支撑。建议在此补充：%s）*",
-					strings.Join(sec.KeyPoints, "；"))
-			}
-		} else if sec.WordBudget > 0 {
-			// 内容有效：校验实际字数与预算的偏差
-			actualLen := len([]rune(content))
-			ratio := float64(actualLen) / float64(sec.WordBudget)
-			if ratio < 0.7 || ratio > 1.3 {
-				f.RiskHints = append(f.RiskHints,
-					fmt.Sprintf("章节 %q 字数偏差较大：实际 %d 字，预算 %d 字（偏差 %+.0f%%）",
-						sec.Name, actualLen, sec.WordBudget, (ratio-1)*100))
-			}
-		}
-
-		// 超预算 1.25 倍截断，防止 LLM 无视字数约束
-		if sec.WordBudget > 0 && len([]rune(content)) > sec.WordBudget*5/4 {
-			origLen := len([]rune(content))
-			limit := sec.WordBudget * 5 / 4
-			content = truncateAtSentence(content, limit)
-			f.RiskHints = append(f.RiskHints,
-				fmt.Sprintf("章节 %q 超预算（原 %d 字 → 截断至 %d 字，丢弃 %d 字），需人工补",
-					sec.Name, origLen, len([]rune(content)), origLen-len([]rune(content))))
-		}
-
-		sec.Content = content
-		ctx.Logf("step3_expand",
-			fmt.Sprintf("章节 %q 完成，%d 字（预算 %d）", sec.Name, len([]rune(sec.Content)), sec.WordBudget))
+		s.processSection(ctx, &f, i, articleType, mode)
+		s.saveProgress(&f)
 	}
+
+	// A5：全部完成，删除进度文件
+	s.removeProgress()
 
 	return json.MarshalIndent(f, "", "  ")
 }

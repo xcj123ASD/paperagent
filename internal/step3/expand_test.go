@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -276,5 +278,62 @@ func TestStage_ConclusionTooShort_UseTemplate(t *testing.T) {
 	}
 	if !strings.Contains(concl.Content, "本文仍存在一定局限") {
 		t.Errorf("结论应含模板特征'本文仍存在一定局限'，实际: %s", concl.Content)
+	}
+}
+
+// TestStage_ProgressSaveAndResume 验证进度文件恢复：已完成的节跳过，进度文件完成后删除。
+func TestStage_ProgressSaveAndResume(t *testing.T) {
+	dir := t.TempDir()
+	progressPath := filepath.Join(dir, "draft.md.progress.json")
+
+	pd := `{"sections":[{"name":"引言","content":"上次完成的引言内容"}]}`
+	if err := os.WriteFile(progressPath, []byte(pd), 0644); err != nil {
+		t.Fatalf("write progress: %v", err)
+	}
+
+	input := makeFrameJSON(t, simpleFrame())
+	rec := &recordExpandClient{}
+	ctx := pipeline.NewContext(true, false)
+	out, err := Stage{LLM: rec, ProgressPath: progressPath}.Run(ctx, input)
+	if err != nil {
+		t.Fatalf("Run 失败: %v", err)
+	}
+	var got model.Frame
+	if err := json.Unmarshal(out, &got); err != nil {
+		t.Fatalf("解析输出失败: %v", err)
+	}
+	if got.Sections[0].Content != "上次完成的引言内容" {
+		t.Errorf("引言应保留进度内容，实际: %q", got.Sections[0].Content)
+	}
+	if len(rec.reqs) != 1 {
+		t.Errorf("应只调 1 次 ExpandSection（仅文献综述），实际 %d", len(rec.reqs))
+	}
+	if _, err := os.Stat(progressPath); !os.IsNotExist(err) {
+		t.Error("完成后进度文件应被删除")
+	}
+}
+
+// TestStage_ProgressRoundTrip 验证 saveProgress/loadProgress 往返。
+func TestStage_ProgressRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	progressPath := filepath.Join(dir, "draft.md.progress.json")
+
+	src := simpleFrame()
+	src.Sections[0].Content = "第一节正文"
+	src.Sections[1].Content = ""
+	s := Stage{ProgressPath: progressPath}
+	s.saveProgress(&src)
+
+	if _, err := os.Stat(progressPath); err != nil {
+		t.Fatalf("进度文件应存在: %v", err)
+	}
+
+	dst := simpleFrame()
+	s.loadProgress(&dst)
+	if dst.Sections[0].Content != "第一节正文" {
+		t.Errorf("loadProgress 应恢复第一节内容，实际: %q", dst.Sections[0].Content)
+	}
+	if dst.Sections[1].Content != "" {
+		t.Errorf("第二节原为空，不应被恢复，实际: %q", dst.Sections[1].Content)
 	}
 }

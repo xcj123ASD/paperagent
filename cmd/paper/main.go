@@ -38,6 +38,7 @@ func run(args []string) error {
 	verifyFlag := fs.Bool("verify", false, "是否校验参考文献真实性")
 	mailtoFlag := fs.String("mailto", "", "OpenAlex 礼貌池邮箱（可选）")
 	exportFlag := fs.String("export", "", "导出格式：docx / tex / html（为空则只生成 md）")
+	resumeFlag := fs.Bool("resume", true, "断点续跑：检测到 <output>.progress.json 时从断点继续，false 则忽略进度文件从头跑")
 
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -47,6 +48,9 @@ func run(args []string) error {
 	cfg.Weights = config.DefaultWeights()
 	cfg.Mode = model.Mode(*modeFlag)
 	cfg.PolishDesign = *polishDesignFlag
+	if *resumeFlag {
+		cfg.ProgressPath = *outputFlag + ".progress.json"
+	}
 
 	switch cfg.Mode {
 	case model.ModeThesis, model.ModeJournal:

@@ -43,6 +43,7 @@ func New(cfg config.Config, catalog []model.Journal) *Orchestrator {
 		Design:       cfg.Design,
 		PolishDesign: cfg.PolishDesign,
 		Refs:         cfg.Refs,
+		ProgressPath: cfg.ProgressPath,
 	})
 	pipeline.Register(pipeline.Stub{Name_: "step4_design"})
 	pipeline.Register(frame.Stage{B: &frame.Builder{

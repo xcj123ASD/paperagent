@@ -36,4 +36,5 @@ type Config struct {
 	Design       *design.DesignInput
 	PolishDesign bool
 	Refs         []cite.Reference
+	ProgressPath string // A5：断点续跑进度文件路径，空则禁用
 }
