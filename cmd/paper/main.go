@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -380,6 +381,13 @@ func run(args []string) error {
 	var frame model.Frame
 	if err := json.Unmarshal(step3JSON, &frame); err != nil {
 		return fmt.Errorf("parse frame failed: %w", err)
+	}
+
+	// D2：翻译 RiskHint 里的技术错误
+	for i, h := range frame.RiskHints {
+		if hint := errhint.Explain(errors.New(h)); hint != "" {
+			frame.RiskHints[i] = h + "\n    提示：" + hint
+		}
 	}
 
 	var refsText string
