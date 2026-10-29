@@ -45,6 +45,17 @@ func hasAPIKey() bool {
 	return false
 }
 
+// paperagentDir 返回 ~/.paperagent/ 目录路径，不存在则创建。
+func paperagentDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	dir := filepath.Join(home, ".paperagent")
+	_ = os.MkdirAll(dir, 0755)
+	return dir, nil
+}
+
 // printFirstRunGuide 首次运行引导：无 Key 时打印配置指引。
 func printFirstRunGuide() {
 	fmt.Println("=== 首次运行引导 ===")
@@ -63,6 +74,57 @@ func printFirstRunGuide() {
 	fmt.Println()
 }
 
+// printDataNotice C3：首次真实运行时告知数据外发。
+// 已提示过则跳过；写标记文件 ~/.paperagent/.data_notice_shown。
+func printDataNotice() {
+	dir, err := paperagentDir()
+	if err != nil {
+		return
+	}
+	marker := filepath.Join(dir, ".data_notice_shown")
+	if _, statErr := os.Stat(marker); statErr == nil {
+		return
+	}
+	fmt.Println("=== 数据外发告知（首次运行）===")
+	fmt.Println("本工具需要调用大模型 API 生成正文。以下内容会发送给 LLM 服务商（默认 DeepSeek）：")
+	fmt.Println("  - 研究设计 JSON 中的主题、变量、模型、数据来源等描述")
+	fmt.Println("  - 参考文献的标题、作者、年份、摘要、结论字段")
+	fmt.Println("  - 章节标题与要点")
+	fmt.Println("不会发送：CSMAR 原始数据文件、draft.md 已有正文、API Key")
+	fmt.Println()
+	fmt.Println("如有未发表数据或敏感信息，请先脱敏再运行。")
+	fmt.Println("此提示只显示一次；撤回同意：删除 ~/.paperagent/.data_notice_shown 后重启即可重新提示。")
+	fmt.Println()
+	_ = os.WriteFile(marker, []byte(time.Now().Format(time.RFC3339)+"\n"), 0644)
+}
+
+// estimateTokens C4：跑前粗估 token 用量和成本。
+// 按 5 章节 × 3000 token + refs 数 × 50 token 估算，返回 (低估值, 高估值)。
+func estimateTokens(refsCount int) (int64, int64) {
+	base := int64(5*3000 + refsCount*50)
+	low := base * 7 / 10
+	high := base * 13 / 10
+	return low, high
+}
+
+// estimateCost 按 DeepSeek deepseek-chat 保守定价估成本（元）：
+// 输入 1 元/百万 token，输出 2 元/百万 token。仅作量级参考，以官网为准。
+func estimateCost(tokens int64) float64 {
+	// 假设 input:output ≈ 6:5（根据实测）
+	input := tokens * 6 / 11
+	output := tokens - input
+	return float64(input)*1e-6 + float64(output)*2e-6
+}
+
+// printCostEstimate 打印成本预估。
+func printCostEstimate(refsCount int) {
+	low, high := estimateTokens(refsCount)
+	costLow := estimateCost(low)
+	costHigh := estimateCost(high)
+	fmt.Printf("ESTIMATED_TOKENS=%d-%d\n", low, high)
+	fmt.Printf("ESTIMATED_COST=%.4f-%.4f 元（按 deepseek-chat 定价，以官网为准）\n", costLow, costHigh)
+}
+
 // printPandocHint 导出前若未找到 pandoc，提示安装方法。
 func printPandocHint() {
 	if pandocinstall.IsInstalled() {
@@ -79,15 +141,14 @@ func printPandocHint() {
 
 // usageLogPath 返回 ~/.paperagent/usage.log 路径。
 func usageLogPath() (string, error) {
-	home, err := os.UserHomeDir()
+	dir, err := paperagentDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".paperagent", "usage.log"), nil
+	return filepath.Join(dir, "usage.log"), nil
 }
 
-// readTodayUsage 读 usage.log，累加今天的所有 total= 值。
-// 文件不存在返回 0。
+// readTodayUsage 读 usage.log，累加今天的所有 total= 值。文件不存在返回 0。
 func readTodayUsage() (int64, error) {
 	path, err := usageLogPath()
 	if err != nil {
@@ -141,7 +202,6 @@ func reportUsage(client llm.Client, mode string, elapsed time.Duration) int64 {
 	if err != nil {
 		return total
 	}
-	_ = os.MkdirAll(filepath.Dir(path), 0755)
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return total
@@ -169,6 +229,7 @@ func run(args []string) error {
 	installPandocFlag := fs.Bool("install-pandoc", false, "下载并安装 pandoc 到 ~/.paperagent/pandoc/，安装后退出")
 	maxPerRunFlag := fs.Int64("max-tokens-per-run", 0, "单次运行 token 上限，0 表示不限（超限保留结果但打印警告）")
 	maxPerDayFlag := fs.Int64("max-tokens-per-day", 0, "单日累计 token 上限，0 表示不限（超限直接拒绝运行）")
+	noEstimateFlag := fs.Bool("no-estimate", false, "跳过跑前成本预估打印")
 
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -203,6 +264,11 @@ func run(args []string) error {
 		printFirstRunGuide()
 	}
 
+	// C3：数据外发告知。只在真实 LLM 模式下提示，Mock 测试不打印。
+	if os.Getenv("LLM_PROVIDER") != "mock" && hasAPIKey() {
+		printDataNotice()
+	}
+
 	// 导出前提示 pandoc 缺失，不阻塞生成。
 	if *exportFlag != "" {
 		printPandocHint()
@@ -222,6 +288,18 @@ func run(args []string) error {
 	case model.ModeThesis, model.ModeJournal:
 	default:
 		return fmt.Errorf("invalid --mode %q, must be thesis or journal", cfg.Mode)
+	}
+
+	// C4：跑前成本预估，不阻塞。只在真实 LLM 模式下打印。
+	refsCount := 0
+	if *refsFlag != "" {
+		// 先数一下 refs 条数用于估算，正式加载在后面
+		if rs, err := cite.LoadRefs(*refsFlag); err == nil {
+			refsCount = len(rs)
+		}
+	}
+	if !*noEstimateFlag && os.Getenv("LLM_PROVIDER") != "mock" && hasAPIKey() {
+		printCostEstimate(refsCount)
 	}
 
 	// C2：跑前检查单日累计用量。
