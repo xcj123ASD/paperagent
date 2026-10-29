@@ -209,3 +209,10 @@ cmd/paper/main.go        # 主入口
 - A 5/5 ✅ / B 5/5 ✅ / C 3/3 ✅ / D 4/7（D2/D3/D4/D5）
 - 累计 17/62 天 ≈ 27%
 - D 组剩余：D1 本地 Web（3 天）
+
+### F1 Key 审计（2026-10-29 完成）
+- 审计结果：无硬编码 Key（`sk-` / `api_key=` / `Bearer xxx` 模式全无匹配）
+- 审计结果：无敏感文件在 git（`.env` / `key.txt` / `load.ps1` / `.pem` / `.key` 全无）
+- `.gitignore` 覆盖：`key.txt`、`env.ps1`、`load.ps1`、`*.log`、`*.progress.json`、`runs/`、`stats*.csv`
+- 补齐缺口：`draft_history_*.md`（D3 产物）、`draft_web_*.md`（Web 产物）
+- 下一项：F2 日志脱敏
