@@ -14,6 +14,7 @@ import (
 	"paperagent/internal/cite"
 	"paperagent/internal/config"
 	"paperagent/internal/design"
+	"paperagent/internal/errhint"
 	"paperagent/internal/export"
 	"paperagent/internal/flow"
 	"paperagent/internal/llm"
@@ -27,6 +28,10 @@ import (
 func main() {
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, err)
+		if hint := errhint.Explain(err); hint != "" {
+			fmt.Fprintln(os.Stderr, "")
+			fmt.Fprintln(os.Stderr, "提示："+hint)
+		}
 		os.Exit(1)
 	}
 }
