@@ -1,0 +1,107 @@
+﻿<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>paperagent</title>
+<style>
+body{font-family:-apple-system,"Segoe UI",sans-serif;max-width:720px;margin:40px auto;padding:0 20px;color:#333}
+h1{font-size:22px}
+label{display:block;margin:16px 0 6px;font-weight:600}
+input,select{width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;font-size:14px;box-sizing:border-box}
+button{margin-top:20px;padding:10px 20px;background:#2563eb;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:15px}
+button:hover{background:#1d4ed8}
+button:disabled{background:#93c5fd;cursor:not-allowed}
+.hint{color:#888;font-size:12px;margin-top:4px}
+#status{margin-top:20px;padding:12px;background:#f3f4f6;border-radius:4px;font-size:13px;display:none}
+#log{margin-top:12px;padding:12px;background:#1e293b;color:#e2e8f0;border-radius:4px;font-family:Consolas,monospace;font-size:12px;max-height:400px;overflow-y:auto;white-space:pre-wrap;display:none}
+#downloads{margin-top:12px}
+#downloads a{display:inline-block;margin-right:16px;padding:8px 16px;background:#059669;color:#fff;text-decoration:none;border-radius:4px}
+</style>
+</head>
+<body>
+<h1>paperagent</h1>
+<p>学术写作 Copilot。给底稿，不给终稿。</p>
+<form id="form">
+  <label for="topic">论文主题</label>
+  <input id="topic" name="topic" placeholder="留空则用 design.json 里的 topic">
+  <label for="design">研究设计 JSON 路径</label>
+  <input id="design" name="design" placeholder="如 design.json">
+  <div class="hint">相对于启动 web 的当前目录</div>
+  <label for="refs">参考文献 JSON 路径</label>
+  <input id="refs" name="refs" placeholder="如 refs_real.json">
+  <label for="mode">模式</label>
+  <select id="mode" name="mode">
+    <option value="journal">journal（期刊）</option>
+    <option value="thesis">thesis（学位）</option>
+  </select>
+  <label for="export">导出格式</label>
+  <select id="export" name="export">
+    <option value="">仅 md</option>
+    <option value="docx">docx</option>
+  </select>
+  <button type="submit" id="submitBtn">生成</button>
+</form>
+<div id="status"></div>
+<pre id="log"></pre>
+<div id="downloads"></div><script>
+var form = document.getElementById('form');
+var statusDiv = document.getElementById('status');
+var logDiv = document.getElementById('log');
+var downloadsDiv = document.getElementById('downloads');
+var submitBtn = document.getElementById('submitBtn');
+var pollTimer = null;
+
+form.addEventListener('submit', function(e) {
+  e.preventDefault();
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  logDiv.textContent = '';
+  logDiv.style.display = 'block';
+  downloadsDiv.innerHTML = '';
+  statusDiv.style.display = 'block';
+  statusDiv.textContent = '提交中...';
+  submitBtn.disabled = true;
+  var fd = new FormData(form);
+  fetch('/api/generate', { method: 'POST', body: fd })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      statusDiv.textContent = '任务 ' + data.id + ' 已启动，轮询进度...';
+      startPolling(data.id);
+    })
+    .catch(function(err) {
+      statusDiv.textContent = '提交失败: ' + err;
+      submitBtn.disabled = false;
+    });
+});
+function startPolling(id) {
+  pollTimer = setInterval(function() {
+    fetch('/api/progress?id=' + encodeURIComponent(id))
+      .then(function(r) { return r.json(); })
+      .then(function(p) {
+        statusDiv.textContent = '状态: ' + p.status + '  日志 ' + p.logs.length + ' 条';
+        logDiv.textContent = p.logs.join('\n');
+        logDiv.scrollTop = logDiv.scrollHeight;
+        if (p.status === 'done' || p.status === 'failed') {
+          clearInterval(pollTimer);
+          pollTimer = null;
+          submitBtn.disabled = false;
+          if (p.status === 'failed') {
+            statusDiv.textContent = '失败: ' + p.error;
+          } else {
+            statusDiv.textContent = '完成';
+            if (p.output) {
+              var a = document.createElement('a');
+              a.href = '/api/download?file=' + encodeURIComponent(p.output);
+              a.textContent = '下载 ' + p.output;
+              downloadsDiv.appendChild(a);
+            }
+          }
+        }
+      })
+      .catch(function(err) {
+        statusDiv.textContent = '轮询失败: ' + err;
+      });
+  }, 1000);
+}
+</script>
+</body>
+</html>
