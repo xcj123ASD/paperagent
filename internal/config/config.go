@@ -37,4 +37,8 @@ type Config struct {
 	PolishDesign bool
 	Refs         []cite.Reference
 	ProgressPath string // A5：断点续跑进度文件路径，空则禁用
+
+	// C2：成本配额。0 表示不限。
+	MaxTokensPerRun int64
+	MaxTokensPerDay int64
 }

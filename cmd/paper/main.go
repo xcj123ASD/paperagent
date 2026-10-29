@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
 	"paperagent/internal/cite"
@@ -75,36 +77,80 @@ func printPandocHint() {
 	fmt.Println()
 }
 
-// reportUsage 从 client 读取用量，打印并追加写 ~/.paperagent/usage.log。
-func reportUsage(client llm.Client, mode string, elapsed time.Duration) {
+// usageLogPath 返回 ~/.paperagent/usage.log 路径。
+func usageLogPath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".paperagent", "usage.log"), nil
+}
+
+// readTodayUsage 读 usage.log，累加今天的所有 total= 值。
+// 文件不存在返回 0。
+func readTodayUsage() (int64, error) {
+	path, err := usageLogPath()
+	if err != nil {
+		return 0, err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	today := time.Now().Format("2006-01-02")
+	var total int64
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, today) {
+			continue
+		}
+		idx := strings.Index(line, "total=")
+		if idx < 0 {
+			continue
+		}
+		rest := line[idx+len("total="):]
+		if sp := strings.IndexByte(rest, ' '); sp > 0 {
+			rest = rest[:sp]
+		}
+		if n, err := strconv.ParseInt(rest, 10, 64); err == nil {
+			total += n
+		}
+	}
+	return total, nil
+}
+
+// reportUsage 从 client 读取用量，打印、写日志，返回本次 total。
+func reportUsage(client llm.Client, mode string, elapsed time.Duration) int64 {
 	u, ok := client.(llm.UsageReporter)
 	if !ok {
-		return
+		return 0
 	}
 	in, out := u.Usage()
 	if in == 0 && out == 0 {
-		return
+		return 0
 	}
 	total := in + out
 	fmt.Printf("TOKENS_INPUT=%d\n", in)
 	fmt.Printf("TOKENS_OUTPUT=%d\n", out)
 	fmt.Printf("TOKENS_TOTAL=%d\n", total)
 
-	home, err := os.UserHomeDir()
+	path, err := usageLogPath()
 	if err != nil {
-		return
+		return total
 	}
-	logDir := filepath.Join(home, ".paperagent")
-	_ = os.MkdirAll(logDir, 0755)
-	logPath := filepath.Join(logDir, "usage.log")
-	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	_ = os.MkdirAll(filepath.Dir(path), 0755)
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		return
+		return total
 	}
 	defer f.Close()
 	line := fmt.Sprintf("%s mode=%s input=%d output=%d total=%d elapsed=%.1fs\n",
 		time.Now().Format("2006-01-02T15:04:05"), mode, in, out, total, elapsed.Seconds())
 	_, _ = f.WriteString(line)
+	return total
 }
 
 func run(args []string) error {
@@ -121,6 +167,8 @@ func run(args []string) error {
 	exportFlag := fs.String("export", "", "导出格式：docx / tex / html（为空则只生成 md）")
 	resumeFlag := fs.Bool("resume", true, "断点续跑：检测到 <output>.progress.json 时从断点继续，false 则忽略进度文件从头跑")
 	installPandocFlag := fs.Bool("install-pandoc", false, "下载并安装 pandoc 到 ~/.paperagent/pandoc/，安装后退出")
+	maxPerRunFlag := fs.Int64("max-tokens-per-run", 0, "单次运行 token 上限，0 表示不限（超限保留结果但打印警告）")
+	maxPerDayFlag := fs.Int64("max-tokens-per-day", 0, "单日累计 token 上限，0 表示不限（超限直接拒绝运行）")
 
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -164,6 +212,8 @@ func run(args []string) error {
 	cfg.Weights = config.DefaultWeights()
 	cfg.Mode = model.Mode(*modeFlag)
 	cfg.PolishDesign = *polishDesignFlag
+	cfg.MaxTokensPerRun = *maxPerRunFlag
+	cfg.MaxTokensPerDay = *maxPerDayFlag
 	if *resumeFlag {
 		cfg.ProgressPath = *outputFlag + ".progress.json"
 	}
@@ -172,6 +222,17 @@ func run(args []string) error {
 	case model.ModeThesis, model.ModeJournal:
 	default:
 		return fmt.Errorf("invalid --mode %q, must be thesis or journal", cfg.Mode)
+	}
+
+	// C2：跑前检查单日累计用量。
+	if cfg.MaxTokensPerDay > 0 {
+		today, err := readTodayUsage()
+		if err == nil {
+			fmt.Printf("TODAY_TOKENS=%d (limit=%d)\n", today, cfg.MaxTokensPerDay)
+			if today >= cfg.MaxTokensPerDay {
+				return fmt.Errorf("今日 token 用量已达上限（%d / %d）。请明日再跑，或提高 --max-tokens-per-day（0 表示不限）", today, cfg.MaxTokensPerDay)
+			}
+		}
 	}
 
 	if *designFlag != "" {
@@ -263,7 +324,13 @@ func run(args []string) error {
 	fmt.Printf("QUALITY_PLACEHOLDERS=%d\n", report.PlaceholderCount)
 
 	// C1：打印 token 用量并写日志
-	reportUsage(orch.LLM, string(cfg.Mode), time.Since(start))
+	total := reportUsage(orch.LLM, string(cfg.Mode), time.Since(start))
+
+	// C2：跑后检查单次上限，超限保留结果但打印警告
+	if cfg.MaxTokensPerRun > 0 && total > cfg.MaxTokensPerRun {
+		fmt.Fprintf(os.Stderr, "警告：本次 token 用量 %d 超过单次上限 %d，已保留结果但建议检查 prompt 是否过长\n", total, cfg.MaxTokensPerRun)
+		fmt.Println("TOKENS_OVER_LIMIT=1")
+	}
 
 	if *exportFlag == "" {
 		return nil
