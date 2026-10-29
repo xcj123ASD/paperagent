@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,6 +17,29 @@ func writeTemp(t *testing.T, name, content string) string {
 		t.Fatalf("write %s: %v", name, err)
 	}
 	return p
+}
+
+// captureStdout 临时重定向 os.Stdout，捕获 run 的打印输出。
+func captureStdout(t *testing.T, f func() error) (string, error) {
+	t.Helper()
+	old := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	os.Stdout = w
+
+	done := make(chan string, 1)
+	go func() {
+		out, _ := io.ReadAll(r)
+		done <- string(out)
+	}()
+
+	runErr := f()
+	w.Close()
+	os.Stdout = old
+	captured := <-done
+	return captured, runErr
 }
 
 const minimalDesign = `{
@@ -163,5 +187,63 @@ func TestRun_DesignNotFound(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("design 文件不存在应返回错误")
+	}
+}
+
+// TestRun_QualityReport 验证 run 结束后打印质量报告标记。
+func TestRun_QualityReport(t *testing.T) {
+	t.Setenv("LLM_PROVIDER", "mock")
+	refsPath := writeTemp(t, "refs.json", minimalRefs)
+	out := filepath.Join(t.TempDir(), "draft.md")
+
+	stdout, err := captureStdout(t, func() error {
+		return run([]string{
+			"--topic", "测试主题",
+			"--mode", "thesis",
+			"--refs", refsPath,
+			"--output", out,
+		})
+	})
+	if err != nil {
+		t.Fatalf("run failed: %v", err)
+	}
+
+	if !strings.Contains(stdout, "QUALITY_STATUS=") {
+		t.Errorf("stdout 缺 QUALITY_STATUS 标记，实际输出：\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "QUALITY_PLACEHOLDERS=") {
+		t.Errorf("stdout 缺 QUALITY_PLACEHOLDERS 标记，实际输出：\n%s", stdout)
+	}
+}
+
+// TestRun_OutputSubstantial 防止"跑通但输出空壳"。
+func TestRun_OutputSubstantial(t *testing.T) {
+	t.Setenv("LLM_PROVIDER", "mock")
+	out := filepath.Join(t.TempDir(), "draft.md")
+
+	err := run([]string{
+		"--topic", "测试主题",
+		"--mode", "thesis",
+		"--output", out,
+	})
+	if err != nil {
+		t.Fatalf("run failed: %v", err)
+	}
+
+	data, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatalf("output not found: %v", err)
+	}
+	md := string(data)
+
+	if len(md) < 2000 {
+		t.Errorf("输出过短：%d 字节，怀疑空壳", len(md))
+	}
+	if strings.Contains(md, "（本节未生成）") {
+		t.Errorf("输出含「（本节未生成）」空壳标记")
+	}
+	sectionCount := strings.Count(md, "\n## ")
+	if sectionCount < 2 {
+		t.Errorf("章节数过少：%d", sectionCount)
 	}
 }
