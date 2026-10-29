@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -20,8 +21,10 @@ type Exporter interface {
 // PandocExporter 通过 pandoc 命令行把 Markdown 转为 docx / tex。
 //
 // pandoc 路径解析顺序：
-//  1. 环境变量 PANDOC_PATH（便携版推荐）
-//  2. PATH 中的 pandoc（系统安装）
+//  1. PandocExporter.Binary（显式指定，测试用）
+//  2. 环境变量 PANDOC_PATH（便携版推荐）
+//  3. 用户目录 ~/.paperagent/pandoc/（首启自动下载安装位置）
+//  4. PATH 中的 pandoc（系统安装）
 type PandocExporter struct {
 	// Binary 为空时自动解析
 	Binary  string
@@ -36,6 +39,28 @@ func NewPandocExporter() *PandocExporter {
 
 func (p *PandocExporter) Name() string { return "pandoc" }
 
+// UserPandocDir 返回用户目录下的 pandoc 安装目录：~/.paperagent/pandoc/
+func UserPandocDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("获取用户目录失败: %w", err)
+	}
+	return filepath.Join(home, ".paperagent", "pandoc"), nil
+}
+
+// UserPandocBinary 返回用户目录下 pandoc 可执行文件路径。
+func UserPandocBinary() (string, error) {
+	dir, err := UserPandocDir()
+	if err != nil {
+		return "", err
+	}
+	name := "pandoc"
+	if runtime.GOOS == "windows" {
+		name = "pandoc.exe"
+	}
+	return filepath.Join(dir, name), nil
+}
+
 // resolveBinary 返回 pandoc 可执行文件路径，找不到时返回错误。
 func (p *PandocExporter) resolveBinary() (string, error) {
 	if p.Binary != "" {
@@ -44,15 +69,24 @@ func (p *PandocExporter) resolveBinary() (string, error) {
 		}
 		return p.Binary, nil
 	}
+
 	if envPath := os.Getenv("PANDOC_PATH"); envPath != "" {
 		if _, err := os.Stat(envPath); err != nil {
 			return "", fmt.Errorf("PANDOC_PATH 指向的文件不存在: %s", envPath)
 		}
 		return envPath, nil
 	}
+
+	// 用户目录（首启自动下载位置）
+	if userBin, err := UserPandocBinary(); err == nil {
+		if _, statErr := os.Stat(userBin); statErr == nil {
+			return userBin, nil
+		}
+	}
+
 	bin, err := exec.LookPath("pandoc")
 	if err != nil {
-		return "", fmt.Errorf("未找到 pandoc：请设置 PANDOC_PATH 环境变量，或把 pandoc 加入 PATH（winget install JohnMacFarlane.Pandoc）")
+		return "", fmt.Errorf("未找到 pandoc：运行 paperagent --install-pandoc 自动下载，或设置 PANDOC_PATH 环境变量，或 winget install JohnMacFarlane.Pandoc")
 	}
 	return bin, nil
 }
